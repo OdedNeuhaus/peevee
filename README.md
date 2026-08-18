@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.png" alt="Peevee" width="132">
+</p>
+
 <h1 align="center">Peevee</h1>
 
 <p align="center">
