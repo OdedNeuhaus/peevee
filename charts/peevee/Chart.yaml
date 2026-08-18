@@ -1,0 +1,14 @@
+apiVersion: v2
+name: peevee
+description: PVC usage observability across every Kubernetes cluster, with Grafana Mimir remote write.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - storage
+  - pvc
+  - observability
+  - capacity
+  - mimir
+sources:
+  - https://github.com/OdedNeuhaus/peevee

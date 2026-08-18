@@ -1,0 +1,257 @@
+# ─────────────────────────────────────────────────────────────
+# peevee — PVC usage observability
+#
+# The only value you must set for a multi-cluster install is
+# `kubeconfigs`: one entry per cluster you want observed.
+# ─────────────────────────────────────────────────────────────
+
+replicaCount: 1
+
+image:
+  repository: peevee
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Cluster kubeconfigs ──────────────────────────────────────
+# Each key becomes a file in the mounted kubeconfig directory, and the file name
+# without its extension becomes the cluster's name in the UI and in the
+# `cluster` metric label. Keep the names stable: renaming one starts a new
+# series in Mimir.
+#
+# Three ways to supply them, in order of preference:
+#
+#  1. existingSecret — you create the Secret yourself, out of band. Best for
+#     production: the credentials never pass through values.yaml or Git.
+#
+#       kubectl create secret generic peevee-kubeconfigs \
+#         --from-file=prod-eu.yaml=/path/to/prod-eu.yaml \
+#         --from-file=prod-us.yaml=/path/to/prod-us.yaml
+#
+#  2. fromDirectory — render the chart with `helm install --set-file`, or use
+#     the bundled helper: `./scripts/install-from-dir.sh ./kubeconfigs`.
+#
+#  3. inline — paste the contents here. Convenient for a lab, and a bad idea
+#     anywhere those credentials matter.
+kubeconfigs:
+  existingSecret: ""
+  # Key in the Secret to mount. Leave empty to mount every key.
+  inline: {}
+    # prod-eu.yaml: |
+    #   apiVersion: v1
+    #   kind: Config
+    #   ...
+
+# ── Configuration ────────────────────────────────────────────
+# Rendered verbatim into a ConfigMap and mounted read-only. The UI displays this
+# but never writes it, so `helm upgrade` stays the single source of truth.
+config:
+  server:
+    listenAddress: 0.0.0.0
+    port: 8080
+
+  discovery:
+    # Where the kubeconfig Secret is mounted. Change this only if you also
+    # change the volumeMounts below.
+    dir: /etc/peevee/kubeconfigs
+    # Treat every context in a kubeconfig as its own cluster. Leave false when
+    # each file holds exactly one cluster, which is the tidier convention.
+    allContexts: false
+    # How often the directory is rescanned, so adding a cluster is a Secret
+    # update rather than a pod restart.
+    reloadInterval: 2m
+    # Also observe the cluster peevee itself runs in, via its ServiceAccount.
+    # Handy for a single-cluster install with no kubeconfigs at all.
+    inClusterFallback: false
+    fileExtensions: ["", ".yaml", ".yml", ".conf", ".kubeconfig"]
+
+  collector:
+    # How often every cluster is scraped. Kubelet refreshes its own volume
+    # statistics roughly once a minute, so going below that samples the same
+    # numbers repeatedly.
+    interval: 60s
+    # Must not exceed the interval, or scrapes would overlap.
+    timeout: 30s
+    clusterConcurrency: 4
+    nodeConcurrency: 8
+
+    # Leave both empty to observe everything. They are mutually exclusive.
+    # A trailing "*" matches by prefix, e.g. "openshift-*".
+    includeNamespaces: []
+    excludeNamespaces: []
+
+    # Keep claims that no pod mounts. They report status "unmounted" rather than
+    # a misleading 0%, and they are usually the ones quietly costing money.
+    includeUnmounted: true
+    staleAfter: 10m
+
+  # ── Grafana Mimir remote write ─────────────────────────────
+  # Ships every series to Mimir using the Prometheus remote write protocol, so
+  # PVC usage is alertable and queryable alongside the rest of your metrics.
+  #
+  # Metric names deliberately match kubelet's own (kubelet_volume_stats_*),
+  # which means the community Grafana dashboards and the kubernetes-mixin PVC
+  # alerts work against these series with no rewriting. peevee adds the
+  # `cluster` label plus its own peevee_* series.
+  remoteWrite:
+    enabled: false
+    url: "http://mimir-nginx.mimir.svc.cluster.local/api/v1/push"
+    # Mimir refuses a write with no tenant unless auth is disabled entirely.
+    tenantId: "platform"
+    timeout: 30s
+    externalLabels: {}
+      # region: eu-west-1
+      # source: peevee
+    headers: {}
+    basicAuth: {}
+      # username: peevee
+      # passwordFile: /etc/peevee/secrets/mimir-password
+    bearerTokenFile: ""
+    tlsConfig:
+      insecureSkipVerify: false
+      caFile: ""
+      serverName: ""
+    maxSamplesPerSend: 500
+    maxShards: 2
+    maxRetries: 3
+
+  ui:
+    title: Peevee
+    refreshInterval: 30s
+    # Usage percentages that colour a volume and drive the at-risk counters.
+    thresholds:
+      warning: 75
+      critical: 90
+
+  # Per-cluster overrides, keyed by the discovered cluster name.
+  clusters: []
+    # - name: prod-eu
+    #   displayName: Production (Frankfurt)
+    #   labels:
+    #     tier: production
+    #   disabled: false
+    #   insecureSkipTlsVerify: false
+
+# ── Credentials for remote write ─────────────────────────────
+# Mounted at /etc/peevee/secrets. Reference them from
+# config.remoteWrite.basicAuth.passwordFile or bearerTokenFile above, so no
+# secret is ever written into the ConfigMap.
+secrets:
+  existingSecret: ""
+  inline: {}
+    # mimir-password: "s3cr3t"
+
+# ── Environment ──────────────────────────────────────────────
+# PEEVEE_REMOTE_WRITE_PASSWORD and friends override the config file, which is
+# the cleanest way to inject a credential from an existing Secret.
+extraEnv: []
+  # - name: PEEVEE_REMOTE_WRITE_PASSWORD
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: mimir-credentials
+  #       key: password
+
+logLevel: info
+logFormat: json
+
+# ── Service and ingress ──────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # There is no built-in authentication: peevee shows the storage layout of
+    # every cluster it can reach. Put an auth proxy or an ingress annotation in
+    # front of it before exposing it beyond the platform team.
+    #
+    # nginx.ingress.kubernetes.io/auth-url: https://oauth2-proxy.example.com/oauth2/auth
+    # nginx.ingress.kubernetes.io/auth-signin: https://oauth2-proxy.example.com/oauth2/start
+  hosts:
+    - host: peevee.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: peevee-tls
+    #   hosts:
+    #     - peevee.example.com
+
+# ── ServiceMonitor ───────────────────────────────────────────
+# For a Prometheus Operator that should scrape peevee's own /metrics endpoint.
+# This is an alternative to remote write, not a replacement for it.
+serviceMonitor:
+  enabled: false
+  interval: 60s
+  scrapeTimeout: 30s
+  labels: {}
+  relabelings: []
+  metricRelabelings: []
+
+# ── RBAC ─────────────────────────────────────────────────────
+# Only needed for the local cluster when discovery.inClusterFallback is on.
+# Remote clusters are reached with whatever their kubeconfig grants; the
+# required permissions there are the same ones listed in the ClusterRole.
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+# ── Scheduling and resources ─────────────────────────────────
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 20
+
+# Readiness waits for the first collection to finish, so a rolling update never
+# sends traffic to a pod that would render an empty table.
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  failureThreshold: 30
+
+extraVolumes: []
+extraVolumeMounts: []

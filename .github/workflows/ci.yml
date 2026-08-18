@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go build ./...
+
+  chart:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint charts/peevee
+      # Rendering with remote write on exercises the templates that are off by
+      # default, which is where a chart regression would otherwise hide.
+      - run: |
+          helm template peevee charts/peevee \
+            --set ingress.enabled=true \
+            --set config.remoteWrite.enabled=true \
+            --set serviceMonitor.enabled=true > /dev/null
+
+  image:
+    name: container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t peevee:ci .

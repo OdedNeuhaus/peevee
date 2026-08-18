@@ -1,0 +1,81 @@
+# Prometheus / Mimir ruler rules for PVC capacity.
+#
+# Load into Mimir with mimirtool:
+#   mimirtool rules load --address=http://mimir:8080 --id=platform examples/mimir-alerts.yaml
+#
+# These use the kubelet_volume_stats_* names that peevee publishes, so they
+# also work unchanged against series scraped from kubelet directly. The only
+# addition is the `cluster` label, which is what makes them fleet-wide.
+namespace: peevee
+groups:
+  - name: pvc-capacity
+    rules:
+      - alert: PVCFillingUp
+        expr: |
+          kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full"
+          description: "On cluster {{ $labels.cluster }}, node {{ $labels.node }}."
+
+      - alert: PVCAlmostFull
+        expr: |
+          kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is critically full on {{ $labels.cluster }}"
+
+      # Catches the failure that looks like free space but is not: an app that
+      # created millions of tiny files has exhausted inodes, and writes fail
+      # while the disk still reports gigabytes available.
+      - alert: PVCInodesExhausted
+        expr: |
+          kubelet_volume_stats_inodes_used / kubelet_volume_stats_inodes > 0.90
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has used {{ $value | humanizePercentage }} of its inodes"
+          description: "Writes will fail even though the volume still reports free space."
+
+      # The projection peevee computes from its own history. It is a
+      # straight-line estimate, so it is a planning signal, not a page.
+      - alert: PVCWillFillWithinFourDays
+        expr: peevee_pvc_days_until_full < 4
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is projected to fill in {{ $value | humanize }} days"
+
+      # Money quietly leaking: claims nothing mounts, still provisioned.
+      - alert: PVCUnmountedForADay
+        expr: |
+          min_over_time(peevee_pvc_status{status="unmounted"}[24h]) == 1
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has had no pod for 24h"
+          description: "On {{ $labels.cluster }}. It is still provisioned and still billed."
+
+      - alert: PeeveeClusterUnreachable
+        expr: peevee_cluster_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "peevee cannot reach cluster {{ $labels.cluster }}"
+          description: "Its kubeconfig may have expired. PVC usage for that cluster is going unobserved."
+
+      - alert: PeeveeNotCollecting
+        expr: time() - peevee_last_scrape_timestamp_seconds > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "peevee has not completed a collection in over 10 minutes"

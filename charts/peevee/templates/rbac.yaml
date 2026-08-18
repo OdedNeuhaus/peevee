@@ -1,0 +1,45 @@
+{{- if .Values.rbac.create }}
+# These are the permissions peevee needs in every cluster it observes. For the
+# local cluster this ClusterRole grants them; for a remote cluster, create the
+# same role there and point its kubeconfig at a ServiceAccount bound to it.
+#
+# nodes/proxy is the important one: it is what allows reading kubelet's
+# /stats/summary endpoint, which is where filesystem usage actually comes from.
+# Everything else is read-only inventory.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "peevee.fullname" . }}
+  labels:
+    {{- include "peevee.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources:
+      - persistentvolumeclaims
+      - persistentvolumes
+      - pods
+      - nodes
+      - namespaces
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "peevee.fullname" . }}
+  labels:
+    {{- include "peevee.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "peevee.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "peevee.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

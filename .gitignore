@@ -1,0 +1,30 @@
+# Build output
+/peevee
+/dist/
+*.tar
+
+# Kubeconfigs. These are credentials for every cluster peevee can reach;
+# keeping them out of git is the whole reason discovery reads a directory.
+/kubeconfigs/
+*.kubeconfig
+kubeconfig*.yaml
+
+# Local overrides
+values.local.yaml
+config.local.yaml
+.env
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Helm
+charts/**/charts/
+charts/**/*.tgz
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store

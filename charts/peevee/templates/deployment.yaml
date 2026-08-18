@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "peevee.fullname" . }}
+  labels:
+    {{- include "peevee.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # peevee holds its snapshot and usage history in memory, so a rolling update
+  # would briefly run two collectors writing the same series to Mimir. Recreate
+  # keeps the series clean at the cost of a few seconds of downtime.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "peevee.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pod whenever the rendered config changes, so a `helm upgrade`
+        # that only touches values still takes effect.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "peevee.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "peevee.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: peevee
+          image: {{ include "peevee.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/peevee/config.yaml
+            - --log-level={{ .Values.logLevel }}
+            - --log-format={{ .Values.logFormat }}
+          {{- with .Values.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/peevee/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: kubeconfigs
+              mountPath: {{ .Values.config.discovery.dir }}
+              readOnly: true
+            {{- if or .Values.secrets.existingSecret .Values.secrets.inline }}
+            - name: secrets
+              mountPath: /etc/peevee/secrets
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "peevee.fullname" . }}
+        - name: kubeconfigs
+          secret:
+            # Optional so the pod still starts before any kubeconfig exists;
+            # the directory watcher picks them up as soon as the Secret appears.
+            secretName: {{ include "peevee.kubeconfigSecretName" . }}
+            optional: true
+            defaultMode: 0400
+        {{- if or .Values.secrets.existingSecret .Values.secrets.inline }}
+        - name: secrets
+          secret:
+            secretName: {{ include "peevee.secretName" . }}
+            defaultMode: 0400
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

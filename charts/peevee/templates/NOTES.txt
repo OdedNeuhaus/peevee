@@ -1,0 +1,39 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} is installed as {{ include "peevee.fullname" . }}.
+
+Reach the UI:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "peevee.fullname" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+Clusters:
+{{- if .Values.kubeconfigs.existingSecret }}
+  Reading kubeconfigs from the existing Secret "{{ .Values.kubeconfigs.existingSecret }}".
+{{- else if .Values.kubeconfigs.inline }}
+  Reading {{ len .Values.kubeconfigs.inline }} kubeconfig(s) supplied inline.
+{{- else if .Values.config.discovery.inClusterFallback }}
+  No kubeconfigs supplied; observing only the local cluster via its ServiceAccount.
+{{- else }}
+  WARNING: no kubeconfigs supplied and inClusterFallback is off, so nothing will be collected.
+
+  Add clusters without reinstalling:
+    kubectl -n {{ .Release.Namespace }} create secret generic {{ include "peevee.kubeconfigSecretName" . }} \
+      --from-file=prod-eu.yaml=/path/to/prod-eu.yaml
+
+  The file name without its extension becomes the cluster name. New files are
+  picked up within {{ .Values.config.discovery.reloadInterval }}, with no restart.
+{{- end }}
+
+Remote write to Mimir: {{ if .Values.config.remoteWrite.enabled }}enabled -> {{ .Values.config.remoteWrite.url }}{{ else }}disabled (set config.remoteWrite.enabled=true){{ end }}
+
+{{- if not .Values.ingress.enabled }}
+{{- else }}
+
+NOTE: peevee has no built-in authentication and exposes the storage layout of
+every cluster it can reach. Put an auth proxy in front of this ingress before
+letting anyone outside the platform team near it.
+{{- end }}
