@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#12161d"/>
-      <stop offset="55%" stop-color="#0c0e12"/>
-      <stop offset="100%" stop-color="#171d27"/>
+      <stop offset="0%" stop-color="#141922"/>
+      <stop offset="50%" stop-color="#0c0e12"/>
+      <stop offset="100%" stop-color="#181e29"/>
     </linearGradient>
     <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#c68c4c" stop-opacity="0.18"/>
+      <stop offset="0%" stop-color="#c68c4c" stop-opacity="0.15"/>
       <stop offset="100%" stop-color="#c68c4c" stop-opacity="0"/>
     </radialGradient>
     <g id="mark">
@@ -32,29 +32,26 @@
   </defs>
 
   <rect width="1280" height="640" fill="url(#bg)"/>
-  <circle cx="330" cy="300" r="300" fill="url(#glow)"/>
+  <circle cx="640" cy="250" r="300" fill="url(#glow)"/>
 
-  <use href="#mark" transform="translate(168,128) scale(3.15)"/>
+  <!-- Centred stack. A symmetric lockup survives being shrunk to a link
+       thumbnail far better than a left-aligned one with a ragged right edge. -->
+  <use href="#mark" transform="translate(532.5,92) scale(2.15)"/>
 
-  <text x="516" y="272" font-family="Ubuntu, DejaVu Sans, sans-serif" font-size="106" font-weight="700" fill="#e7ebf2" letter-spacing="-2.5">Peevee</text>
-  <text x="520" y="330" font-family="Ubuntu, DejaVu Sans, sans-serif" font-size="31" fill="#98a2b3">PVC usage across every cluster you operate</text>
+  <text x="640" y="378" text-anchor="middle" font-family="Ubuntu, DejaVu Sans, sans-serif"
+        font-size="96" font-weight="700" fill="#e7ebf2" letter-spacing="-2.5">Peevee</text>
 
-  <rect x="521" y="366" width="72" height="3" rx="1.5" fill="#5b8dff"/>
+  <text x="640" y="430" text-anchor="middle" font-family="Ubuntu, DejaVu Sans, sans-serif"
+        font-size="30" fill="#98a2b3">PVC usage across every cluster you operate</text>
 
-  <text x="520" y="424" font-family="DejaVu Sans Mono, monospace" font-size="20" fill="#6b7484">any storage class  ·  no agents  ·  Grafana Mimir</text>
-
-  <!-- A row of usage bars: the thing the product is actually about. -->
-  <g transform="translate(520,470)">
-    <rect x="0"   y="0" width="150" height="9" rx="4.5" fill="#1e2530"/>
-    <rect x="0"   y="0" width="46"  height="9" rx="4.5" fill="#35c48d"/>
-    <rect x="166" y="0" width="150" height="9" rx="4.5" fill="#1e2530"/>
-    <rect x="166" y="0" width="119" height="9" rx="4.5" fill="#e0a136"/>
-    <rect x="332" y="0" width="150" height="9" rx="4.5" fill="#1e2530"/>
-    <rect x="332" y="0" width="143" height="9" rx="4.5" fill="#f2635e"/>
-    <text x="0"   y="34" font-family="DejaVu Sans Mono, monospace" font-size="16" fill="#35c48d">31%</text>
-    <text x="166" y="34" font-family="DejaVu Sans Mono, monospace" font-size="16" fill="#e0a136">79%</text>
-    <text x="332" y="34" font-family="DejaVu Sans Mono, monospace" font-size="16" fill="#f2635e">95%</text>
+  <!-- Usage bars: green, amber, red. No labels — they are unreadable once the
+       card is scaled down, and the fill levels already say it. -->
+  <g transform="translate(454,494)">
+    <rect x="0"   y="0" width="112" height="10" rx="5" fill="#222a36"/>
+    <rect x="0"   y="0" width="35"  height="10" rx="5" fill="#35c48d"/>
+    <rect x="130" y="0" width="112" height="10" rx="5" fill="#222a36"/>
+    <rect x="130" y="0" width="88"  height="10" rx="5" fill="#e0a136"/>
+    <rect x="260" y="0" width="112" height="10" rx="5" fill="#222a36"/>
+    <rect x="260" y="0" width="106" height="10" rx="5" fill="#f2635e"/>
   </g>
-
-  <text x="1232" y="596" text-anchor="end" font-family="DejaVu Sans Mono, monospace" font-size="18" fill="#454e5e">github.com/OdedNeuhaus/peevee</text>
 </svg>
