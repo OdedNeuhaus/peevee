@@ -7,6 +7,9 @@
 
 ---
 
+<img width="1872" height="792" alt="image" src="https://github.com/user-attachments/assets/1091533c-962d-4d8d-a1ae-8468a29a7c4f" />
+
+
 Kubernetes will happily tell you a PVC is `Bound` and `10Gi`. It will not tell
 you that it is 94% full. That number lives on the node, `kubectl` has no command
 for it, and `metrics-server` throws it away.
