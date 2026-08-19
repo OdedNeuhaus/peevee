@@ -404,7 +404,25 @@ func toFacets(m map[string]int) []Facet {
 }
 
 func sortRows(rows []Row, key string, desc bool) {
-	less := func(i, j int) bool { return rows[i].UsagePercent > rows[j].UsagePercent }
+	// The Usage column shows a percentage when stats exist and the status word
+	// otherwise. Status rows rank below every percentage and alphabetically
+	// among themselves, so they read as a sorted group in both directions
+	// rather than as 0% in arbitrary order. (Natural order is highest first;
+	// a later reversal yields ascending, which is why the alphabet is reversed
+	// here.)
+	less := func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		switch {
+		case a.HasStats != b.HasStats:
+			return a.HasStats
+		case !a.HasStats:
+			if a.Status != b.Status {
+				return a.Status > b.Status
+			}
+			return a.Name > b.Name
+		}
+		return a.UsagePercent > b.UsagePercent
+	}
 	switch key {
 	case "name":
 		less = func(i, j int) bool { return rows[i].Name < rows[j].Name }

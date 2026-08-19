@@ -197,3 +197,55 @@ func TestHistoryEvictedWhenVolumeDisappears(t *testing.T) {
 		t.Error("history should be dropped once the volume is gone")
 	}
 }
+
+// The Usage column shows a percentage for volumes with stats and the status
+// word for those without. Treating the status rows as 0% made them sort in
+// arbitrary order among themselves. They must behave like values below every
+// percentage, ordered alphabetically by status word, so flipping the direction
+// flips them consistently with the numbers.
+func TestUsageSortOrdersStatusRowsAlphabetically(t *testing.T) {
+	noStats := func(name string, status model.Status) model.Volume {
+		return model.Volume{Cluster: "c1", Namespace: "ns", Name: name, Status: status, StorageClass: "sc"}
+	}
+	st := New()
+	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{
+		vol("ns", "forty", 40, 100, false, "n"),
+		noStats("p1", model.StatusPending),
+		vol("ns", "ten", 10, 100, false, "n"),
+		noStats("u1", model.StatusUnmounted),
+		noStats("b1", model.StatusBlock),
+		vol("ns", "twenty", 20, 100, false, "n"),
+		noStats("p2", model.StatusPending),
+	}})
+
+	names := func(rows []Row) []string {
+		out := make([]string, len(rows))
+		for i, r := range rows {
+			out[i] = r.Name
+		}
+		return out
+	}
+	equal := func(a, b []string) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	got := names(st.Query(Query{Sort: "usage", WarnThreshold: 75, CritThreshold: 90}).Volumes)
+	want := []string{"forty", "twenty", "ten", "u1", "p2", "p1", "b1"}
+	if !equal(got, want) {
+		t.Errorf("usage desc = %v, want %v", got, want)
+	}
+
+	got = names(st.Query(Query{Sort: "usage", Desc: true, WarnThreshold: 75, CritThreshold: 90}).Volumes)
+	want = []string{"b1", "p1", "p2", "u1", "ten", "twenty", "forty"}
+	if !equal(got, want) {
+		t.Errorf("usage asc = %v, want %v", got, want)
+	}
+}
