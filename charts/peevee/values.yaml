@@ -8,7 +8,9 @@
 replicaCount: 1
 
 image:
-  repository: peevee
+  # Published by .github/workflows/release.yml on every push to main. :latest
+  # tracks main; pin to a v-tag or a sha- tag for anything you care about.
+  repository: ghcr.io/odedneuhaus/peevee
   tag: ""            # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 imagePullSecrets: []

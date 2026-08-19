@@ -1,9 +1,16 @@
 # ── Build ─────────────────────────────────────────────────────
-FROM golang:1.24-alpine AS build
+# Pinned to the build machine's own architecture. The Go build below
+# cross-compiles instead, so no stage ever executes target-architecture code and
+# a multi-arch build needs no QEMU emulation.
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
 
 ARG VERSION=dev
 ARG COMMIT=none
 ARG DATE=unknown
+# Supplied by BuildKit per platform being built. The fallback keeps a plain
+# `docker build` on the legacy builder, where it is unset, from passing an empty
+# GOARCH to the compiler.
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -15,7 +22,7 @@ RUN go mod download
 COPY . .
 
 # CGO is off so the result is a static binary that runs on a scratch base.
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-$(go env GOARCH)} go build \
       -trimpath \
       -ldflags="-s -w \
         -X github.com/OdedNeuhaus/peevee/internal/version.Version=${VERSION} \

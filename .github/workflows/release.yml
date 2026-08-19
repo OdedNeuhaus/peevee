@@ -1,0 +1,80 @@
+name: release
+
+# Every push to main publishes the tip as :main and moves :latest. Pushing a
+# v* tag publishes the same build under its semver tags, so a release is a tag
+# push and nothing else.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+# Two pushes to main in quick succession would otherwise race to :latest, and
+# the loser could be the newer commit. Tags get their own group via the ref, so
+# a release is never cancelled by a branch build.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: publish to ghcr
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirrors the Makefile so an image built here carries the same version
+      # stamp as one built locally.
+      - name: Collect build stamps
+        id: stamp
+        run: |
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Automatically provided; the packages: write permission above is what
+          # makes it usable as a registry credential.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # GHCR rejects uppercase in an image name and this owner has some.
+          # metadata-action lowercases the value; interpolating it straight into
+          # a docker build -t would not.
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          # arm64 nodes are common enough in Kubernetes that an amd64-only image
+          # would be a surprise. Both are cross-compiled, so this is cheap.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ steps.stamp.outputs.commit }}
+            DATE=${{ steps.stamp.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Provenance attestations show up in the GHCR package listing as
+          # unknown/unknown entries beside the real platforms. Off until there
+          # is a reason to consume them.
+          provenance: false

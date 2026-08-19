@@ -1,4 +1,4 @@
-IMAGE   ?= peevee
+IMAGE   ?= ghcr.io/odedneuhaus/peevee
 TAG     ?= 0.1.0
 VERSION ?= $(TAG)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
