@@ -6,7 +6,6 @@
 
 <p align="center">
   <em>PVC usage across every cluster you operate, in one table.</em><br>
-  <sub><strong>PV + Eevee</strong> — it watches your PersistentVolumes, and it evolves into whatever storage backend you point it at.</sub>
 </p>
 
 ---
