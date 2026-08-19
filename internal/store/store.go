@@ -20,9 +20,9 @@ const historyDepth = 180
 
 // Point is one retained usage reading.
 type Point struct {
-	T     time.Time `json:"t"`
-	Used  int64     `json:"used"`
-	Pct   float64   `json:"pct"`
+	T    time.Time `json:"t"`
+	Used int64     `json:"used"`
+	Pct  float64   `json:"pct"`
 }
 
 type Store struct {
@@ -144,18 +144,18 @@ type Row struct {
 	GrowthBytesPerDay *float64 `json:"growthBytesPerDay,omitempty"`
 	// DaysUntilFull is a projection from that slope, omitted when usage is flat
 	// or shrinking. It is a straight-line estimate, not a forecast.
-	DaysUntilFull *float64 `json:"daysUntilFull,omitempty"`
+	DaysUntilFull *float64  `json:"daysUntilFull,omitempty"`
 	Spark         []float64 `json:"spark,omitempty"`
 	Severity      string    `json:"severity"`
 }
 
 // Facets are the distinct values available for filtering, with counts.
 type Facets struct {
-	Clusters      []Facet `json:"clusters"`
-	Namespaces    []Facet `json:"namespaces"`
-	StorageClass  []Facet `json:"storageClasses"`
-	Provisioners  []Facet `json:"provisioners"`
-	Statuses      []Facet `json:"statuses"`
+	Clusters     []Facet `json:"clusters"`
+	Namespaces   []Facet `json:"namespaces"`
+	StorageClass []Facet `json:"storageClasses"`
+	Provisioners []Facet `json:"provisioners"`
+	Statuses     []Facet `json:"statuses"`
 }
 
 type Facet struct {
@@ -404,65 +404,112 @@ func toFacets(m map[string]int) []Facet {
 }
 
 func sortRows(rows []Row, key string, desc bool) {
-	// The Usage column shows a percentage when stats exist and the status word
-	// otherwise. Status rows rank below every percentage and alphabetically
-	// among themselves, so they read as a sorted group in both directions
-	// rather than as 0% in arbitrary order. (Natural order is highest first;
-	// a later reversal yields ascending, which is why the alphabet is reversed
-	// here.)
-	less := func(i, j int) bool {
-		a, b := rows[i], rows[j]
-		switch {
-		case a.HasStats != b.HasStats:
-			return a.HasStats
-		case !a.HasStats:
-			if a.Status != b.Status {
-				return a.Status > b.Status
-			}
-			return a.Name > b.Name
-		}
-		return a.UsagePercent > b.UsagePercent
+	// Direction is applied inside each comparator rather than by reversing the
+	// sorted slice at the end. Some rows have no value in the column at all — a
+	// volume with no stats has no percentage, one with no history has no
+	// countdown — and those are pinned below the real values in both
+	// directions. A whole-slice reversal would float exactly those rows to the
+	// top, which is the opposite of what "sort by most urgent, ascending"
+	// should mean. Reversal also flipped ties, so equal rows reshuffled on
+	// every toggle.
+	dir := 1
+	if desc {
+		dir = -1
 	}
+
+	// Higher first in the natural direction: the interesting end of a number
+	// column is the big end.
+	num := func(x, y float64) int {
+		switch {
+		case x > y:
+			return -1
+		case x < y:
+			return 1
+		}
+		return 0
+	}
+	// A to Z in the natural direction.
+	str := func(x, y string) int {
+		switch {
+		case x < y:
+			return -1
+		case x > y:
+			return 1
+		}
+		return 0
+	}
+	// Ordering for rows that carry no value in the sorted column. It never
+	// takes dir, so the group reads identically whichever way the column
+	// points. Name alone is not unique — the same claim name recurs across
+	// namespaces and clusters — so it falls through to both.
+	unknown := func(a, b Row) int {
+		if c := str(string(a.Status), string(b.Status)); c != 0 {
+			return c
+		}
+		if c := str(a.Name, b.Name); c != 0 {
+			return c
+		}
+		if c := str(a.Namespace, b.Namespace); c != 0 {
+			return c
+		}
+		return str(a.Cluster, b.Cluster)
+	}
+	// The Usage column shows a percentage when stats exist and the status word
+	// otherwise. A missing percentage is not 0%, so status rows never mix in
+	// among the numbers.
+	usageWith := func(a, b Row, d int) int {
+		if a.HasStats != b.HasStats {
+			if a.HasStats {
+				return -1
+			}
+			return 1
+		}
+		if !a.HasStats {
+			return unknown(a, b)
+		}
+		return num(a.UsagePercent, b.UsagePercent) * d
+	}
+	usage := func(a, b Row) int { return usageWith(a, b, dir) }
+
+	cmp := usage
 	switch key {
 	case "name":
-		less = func(i, j int) bool { return rows[i].Name < rows[j].Name }
+		cmp = func(a, b Row) int { return str(a.Name, b.Name) * dir }
 	case "namespace":
-		less = func(i, j int) bool { return rows[i].Namespace < rows[j].Namespace }
+		cmp = func(a, b Row) int { return str(a.Namespace, b.Namespace) * dir }
 	case "cluster":
-		less = func(i, j int) bool { return rows[i].Cluster < rows[j].Cluster }
+		cmp = func(a, b Row) int { return str(a.Cluster, b.Cluster) * dir }
 	case "used":
-		less = func(i, j int) bool { return rows[i].UsedBytes > rows[j].UsedBytes }
+		cmp = func(a, b Row) int { return num(float64(a.UsedBytes), float64(b.UsedBytes)) * dir }
 	case "capacity":
-		less = func(i, j int) bool { return rows[i].CapacityBytes > rows[j].CapacityBytes }
+		cmp = func(a, b Row) int { return num(float64(a.CapacityBytes), float64(b.CapacityBytes)) * dir }
 	case "requested":
-		less = func(i, j int) bool { return rows[i].RequestedBytes > rows[j].RequestedBytes }
+		cmp = func(a, b Row) int { return num(float64(a.RequestedBytes), float64(b.RequestedBytes)) * dir }
 	case "storageClass":
-		less = func(i, j int) bool { return rows[i].StorageClass < rows[j].StorageClass }
+		cmp = func(a, b Row) int { return str(a.StorageClass, b.StorageClass) * dir }
 	case "daysUntilFull":
-		less = func(i, j int) bool {
-			// Volumes with no projection sort last either way: an unknown is
-			// never more urgent than a real countdown.
-			a, b := rows[i].DaysUntilFull, rows[j].DaysUntilFull
-			if a == nil && b == nil {
-				return rows[i].UsagePercent > rows[j].UsagePercent
+		cmp = func(a, b Row) int {
+			// Volumes with no projection sort last in both directions: an
+			// unknown is never more urgent than a real countdown, and it does
+			// not become the least urgent thing when the column is reversed
+			// either. Among themselves they fall back to usage in its natural
+			// direction, so the pinned block does not reshuffle on a toggle.
+			x, y := a.DaysUntilFull, b.DaysUntilFull
+			switch {
+			case x == nil && y == nil:
+				return usageWith(a, b, 1)
+			case x == nil:
+				return 1
+			case y == nil:
+				return -1
 			}
-			if a == nil {
-				return false
-			}
-			if b == nil {
-				return true
-			}
-			return *a < *b
+			return num(*y, *x) * dir // soonest first, so smaller is "higher"
 		}
 	case "usage", "":
 		// default
 	}
-	sort.SliceStable(rows, less)
-	if desc {
-		for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
-			rows[i], rows[j] = rows[j], rows[i]
-		}
-	}
+
+	sort.SliceStable(rows, func(i, j int) bool { return cmp(rows[i], rows[j]) < 0 })
 }
 
 func contains(list []string, v string) bool {
