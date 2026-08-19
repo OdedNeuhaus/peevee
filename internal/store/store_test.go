@@ -1,6 +1,7 @@
 package store
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -11,10 +12,21 @@ func vol(ns, name string, used, capacity int64, shared bool, node string) model.
 	return model.Volume{
 		Cluster: "c1", Namespace: ns, Name: name, Node: node,
 		HasStats: true, UsedBytes: used, CapacityBytes: capacity,
-		UsagePercent: float64(used) / float64(capacity) * 100,
+		UsagePercent:     float64(used) / float64(capacity) * 100,
 		SharedFilesystem: shared, Status: model.StatusOK, StorageClass: "sc",
 	}
 }
+
+// names is the shorthand the ordering tests compare against.
+func names(rows []Row) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.Name
+	}
+	return out
+}
+
+func ptr(f float64) *float64 { return &f }
 
 // Several claims on one host disk each report that whole disk. Counting them
 // per claim would report a 1 TiB node as several TiB of fleet capacity.
@@ -195,5 +207,110 @@ func TestHistoryEvictedWhenVolumeDisappears(t *testing.T) {
 	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{}})
 	if len(st.History("c1/a/temp")) != 0 {
 		t.Error("history should be dropped once the volume is gone")
+	}
+}
+
+// The Usage column shows a percentage for volumes with stats and the status
+// word for those without. Treating a missing percentage as 0% mixed those rows
+// in among real numbers and left them in scrape order among themselves. They
+// belong below every percentage in both directions, alphabetically by status,
+// so toggling the column never floats "no data" to the top.
+func TestUsageSortKeepsStatusRowsBelowPercentages(t *testing.T) {
+	noStats := func(name string, status model.Status) model.Volume {
+		return model.Volume{Cluster: "c1", Namespace: "ns", Name: name, Status: status, StorageClass: "sc"}
+	}
+	st := New()
+	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{
+		vol("ns", "forty", 40, 100, false, "n"),
+		noStats("p1", model.StatusPending),
+		vol("ns", "ten", 10, 100, false, "n"),
+		noStats("u1", model.StatusUnmounted),
+		noStats("b1", model.StatusBlock),
+		vol("ns", "twenty", 20, 100, false, "n"),
+		noStats("p2", model.StatusPending),
+	}})
+
+	q := Query{Sort: "usage", WarnThreshold: 75, CritThreshold: 90}
+	got := names(st.Query(q).Volumes)
+	want := []string{"forty", "twenty", "ten", "b1", "p1", "p2", "u1"}
+	if !slices.Equal(got, want) {
+		t.Errorf("usage, highest first = %v, want %v", got, want)
+	}
+
+	q.Desc = true
+	got = names(st.Query(q).Volumes)
+	want = []string{"ten", "twenty", "forty", "b1", "p1", "p2", "u1"}
+	if !slices.Equal(got, want) {
+		t.Errorf("usage, lowest first = %v, want %v", got, want)
+	}
+}
+
+// One claim name recurs across namespaces and clusters, so status and name
+// together are not a unique key. Without a further tie-break the group is back
+// to scrape order for exactly the rows this sort exists to stabilise.
+func TestUsageSortBreaksTiesBeyondName(t *testing.T) {
+	noStats := func(cluster, ns, name string) model.Volume {
+		return model.Volume{Cluster: cluster, Namespace: ns, Name: name,
+			Status: model.StatusUnmounted, StorageClass: "sc"}
+	}
+	st := New()
+	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{
+		noStats("c2", "beta", "data"),
+		noStats("c1", "beta", "data"),
+		noStats("c1", "alpha", "data"),
+	}})
+
+	rows := st.Query(Query{Sort: "usage"}).Volumes
+	got := make([]string, len(rows))
+	for i, r := range rows {
+		got[i] = r.Cluster + "/" + r.Namespace
+	}
+	want := []string{"c1/alpha", "c1/beta", "c2/beta"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tie order = %v, want %v", got, want)
+	}
+}
+
+// A volume with no projection is not an early deadline. Reversing the sorted
+// slice to get ascending order used to put every unknown at the top, burying
+// the real countdowns the column exists to surface.
+func TestProjectionSortKeepsUnknownsLastBothWays(t *testing.T) {
+	rows := []Row{
+		{Volume: model.Volume{Name: "far", HasStats: true}, DaysUntilFull: ptr(30)},
+		{Volume: model.Volume{Name: "none1", HasStats: true, UsagePercent: 10}},
+		{Volume: model.Volume{Name: "soon", HasStats: true}, DaysUntilFull: ptr(2)},
+		{Volume: model.Volume{Name: "none2", HasStats: true, UsagePercent: 90}},
+	}
+
+	cp := slices.Clone(rows)
+	sortRows(cp, "daysUntilFull", false)
+	if got, want := names(cp), []string{"soon", "far", "none2", "none1"}; !slices.Equal(got, want) {
+		t.Errorf("soonest first = %v, want %v", got, want)
+	}
+
+	cp = slices.Clone(rows)
+	sortRows(cp, "daysUntilFull", true)
+	if got, want := names(cp), []string{"far", "soon", "none2", "none1"}; !slices.Equal(got, want) {
+		t.Errorf("furthest first = %v, want %v", got, want)
+	}
+}
+
+// Reversing the slice also reversed equal rows, so a column full of ties
+// reshuffled every time the user toggled it.
+func TestSortIsStableAcrossDirectionForEqualValues(t *testing.T) {
+	rows := []Row{
+		{Volume: model.Volume{Name: "a", HasStats: true, CapacityBytes: 100}},
+		{Volume: model.Volume{Name: "b", HasStats: true, CapacityBytes: 100}},
+		{Volume: model.Volume{Name: "c", HasStats: true, CapacityBytes: 100}},
+	}
+
+	cp := slices.Clone(rows)
+	sortRows(cp, "capacity", false)
+	asc := names(cp)
+
+	cp = slices.Clone(rows)
+	sortRows(cp, "capacity", true)
+	if got := names(cp); !slices.Equal(got, asc) {
+		t.Errorf("equal capacities reordered on toggle: %v then %v", asc, got)
 	}
 }
