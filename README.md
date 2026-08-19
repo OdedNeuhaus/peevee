@@ -439,19 +439,6 @@ Found a bug or have an idea? [Open an issue](https://github.com/OdedNeuhaus/peev
 
 ---
 
-## Why the name?
-
-**Peevee** is *PV* said out loud — which happens to sound like *Eevee*, the
-Pokémon defined by evolving into whichever type you give it. Same idea here: one
-code path reads the kubelet, and it becomes a Trident monitor, a PowerFlex
-monitor or a local-disk monitor depending only on what the cluster hands it.
-
-The mark is an original drawing in Eevee's palette, built from a dozen SVG
-shapes. Eevee and Pokémon are trademarks of Nintendo, Creatures Inc. and GAME
-FREAK — fine for an internal tool, worth a thought before a conference booth.
-
----
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
