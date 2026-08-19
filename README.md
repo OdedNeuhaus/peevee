@@ -5,7 +5,7 @@
 <h1 align="center">Peevee</h1>
 
 <p align="center">
-  <em>PVC usage across every cluster you operate, in one table.</em><br>
+  <em>PVC usage across every cluster you operate, in one table.</em>
 </p>
 
 ---
