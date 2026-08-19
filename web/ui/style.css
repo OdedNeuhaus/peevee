@@ -87,6 +87,40 @@
   }
 }
 
+/* "girls" is an easter egg: type g-i-r-l-s anywhere outside an input. Deep
+   purple with a neon-pink glow. The glow lives in the shadow tokens, so every
+   card, button and drawer picks it up with zero new selectors. --crit stays
+   red on purpose: when pink is the accent, a pink alarm no longer reads as
+   an alarm, and telling you a volume is 97% full is the whole job. */
+:root[data-theme="girls"] {
+  color-scheme: dark;
+  --bg: #14071f;
+  --bg-elev: #1e0b2e;
+  --surface: #1e0b2e;
+  --surface-2: #2a1140;
+  --border: #46215f;
+  --border-strong: #ff6ad5;
+  --text: #ffe9f8;
+  --text-muted: #c79ad4;
+  --text-faint: #9a70ae;
+
+  --accent: #ff6ad5;
+  --accent-soft: #3a1350;
+
+  --ok: #5ef7c4;
+  --ok-soft: #0f3328;
+  --warn: #ffd166;
+  --warn-soft: #3a2c10;
+  --crit: #ff5252;
+  --crit-soft: #43141c;
+  --unknown: #a883b8;
+  --unknown-soft: #2b1838;
+
+  --shadow-sm: 0 0 0 1px rgba(255, 106, 213, .22), 0 0 8px rgba(255, 106, 213, .12);
+  --shadow-md: 0 0 0 1px rgba(255, 106, 213, .28), 0 0 14px rgba(255, 106, 213, .18);
+  --shadow-lg: 0 0 0 1px rgba(255, 106, 213, .35), 0 0 40px rgba(255, 106, 213, .30);
+}
+
 * { box-sizing: border-box; }
 
 /* The `hidden` attribute only carries `display: none` from the browser's own
@@ -690,6 +724,11 @@ code {
 .chart .axis-label { fill: var(--text-faint); font-size: 9.5px; font-family: var(--sans); }
 .chart .series { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
 .chart .series-area { fill: var(--accent); opacity: .12; stroke: none; }
+
+/* Confetti layer for the girls theme. pointer-events keeps it inert, and it
+   sits below the drawer (61) and toast (90) so the celebration never covers
+   anything you are actually interacting with. */
+.confetti { position: fixed; inset: 0; z-index: 55; pointer-events: none; }
 
 .toast {
   position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 90;

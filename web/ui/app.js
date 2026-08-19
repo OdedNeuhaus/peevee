@@ -661,9 +661,100 @@ function toast(msg) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
 }
 
+/* ── Girls theme confetti ───────────────────────────────────── */
+
+const confetti = {
+  ctx: null, parts: [], raf: 0, active: false,
+  colors: ['#ff6ad5', '#ffd166', '#5ef7c4', '#c79ad4', '#ffffff'],
+};
+// Tracked so the activation burst can land where the mouse actually is,
+// even though the trigger is a keystroke.
+let mouseX = innerWidth / 2, mouseY = innerHeight / 2;
+let spawnArmed = true;
+
+function confettiSpawn(x, y, n) {
+  if (!confetti.active) return;
+  // A hard cap keeps a frantic mouse from growing the array without bound.
+  const room = 120 - confetti.parts.length;
+  for (let i = 0; i < Math.min(n, room); i++) {
+    confetti.parts.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 2.4,
+      vy: -Math.random() * 1.8 - 0.4,
+      size: Math.random() * 3 + 1.5,
+      life: 1,
+      color: confetti.colors[(Math.random() * confetti.colors.length) | 0],
+    });
+  }
+  if (!confetti.raf) {
+    lastTick = 0;
+    confetti.raf = requestAnimationFrame(confettiTick);
+  }
+}
+
+let lastTick = 0;
+function confettiTick(now) {
+  // Physics scale by elapsed time, not frames: frame-counted life dies in a
+  // third of the intended 800ms on a 144Hz monitor and lingers for seconds
+  // when the browser throttles. dt is clamped so a tab resuming from the
+  // background does not teleport every particle off-screen in one step.
+  const dt = Math.min(now - (lastTick || now), 64) / 16.67;
+  lastTick = now;
+  const c = $('#confetti');
+  const { ctx, parts } = confetti;
+  ctx.clearRect(0, 0, c.width, c.height);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 0.055 * dt;   // gravity
+    p.life -= dt / 48;    // 48 x 16.67ms = 800ms whatever the frame rate
+    if (p.life <= 0) { parts.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  // The loop stops itself when the last particle dies, so an idle tab
+  // spends nothing.
+  confetti.raf = parts.length ? requestAnimationFrame(confettiTick) : 0;
+}
+
+// One always-on listener: position tracking is a two-field write when the
+// theme is off, and spawning is throttled to one batch per animation frame
+// however fast the mouse moves.
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  if (!confetti.active || !spawnArmed) return;
+  spawnArmed = false;
+  requestAnimationFrame(() => { spawnArmed = true; });
+  confettiSpawn(mouseX, mouseY, 3);
+});
+
+function resizeConfetti() {
+  const c = $('#confetti');
+  c.width = innerWidth; c.height = innerHeight;
+}
+window.addEventListener('resize', resizeConfetti);
+
+// Called whenever the theme changes; owns everything conditional on "girls".
+function syncConfetti() {
+  const on = document.documentElement.dataset.theme === 'girls'
+    && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const c = $('#confetti');
+  confetti.active = on;
+  c.hidden = !on;
+  if (on) {
+    confetti.ctx = c.getContext('2d');
+    resizeConfetti();
+  } else {
+    confetti.parts.length = 0;
+  }
+}
+
 /* ── Wiring ─────────────────────────────────────────────────── */
 
 let searchTimer;
+let keyBuffer = '';
 function wire() {
   $('#search').addEventListener('input', (e) => {
     state.search = e.target.value.trim();
@@ -766,9 +857,12 @@ function wire() {
   $('#themeBtn').addEventListener('click', () => {
     const root = document.documentElement;
     const order = ['auto', 'light', 'dark'];
+    // indexOf is -1 for the "girls" easter egg, so the button always exits it
+    // back to "auto" rather than silently keeping a fourth state in the cycle.
     const next = order[(order.indexOf(root.dataset.theme) + 1) % order.length];
     root.dataset.theme = next;
     localStorage.setItem('peevee-theme', next);
+    syncConfetti();
     toast(`Theme: ${next}`);
   });
 
@@ -783,6 +877,22 @@ function wire() {
       e.preventDefault();
       $('#search').focus();
     }
+    // Easter egg: typing "girls" outside an input flips the theme. Only bare
+    // printable keys count, so shortcuts like Ctrl+R never feed the buffer,
+    // and searching for a namespace containing "girls" never triggers it.
+    const tag = document.activeElement.tagName;
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
+        && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+      keyBuffer = (keyBuffer + e.key.toLowerCase()).slice(-5);
+      if (keyBuffer === 'girls') {
+        keyBuffer = '';
+        document.documentElement.dataset.theme = 'girls';
+        localStorage.setItem('peevee-theme', 'girls');
+        syncConfetti();
+        confettiSpawn(mouseX, mouseY, 60);
+        toast('Theme: girls \u2728');
+      }
+    }
   });
 
   wireDropdowns();
@@ -791,6 +901,7 @@ function wire() {
 function init() {
   const saved = localStorage.getItem('peevee-theme');
   if (saved) document.documentElement.dataset.theme = saved;
+  syncConfetti();
 
   wire();
   loadConfig();
