@@ -17,7 +17,8 @@
 
 ---
 
-<img width="1872" height="792" alt="Peevee UI" src="https://github.com/user-attachments/assets/1091533c-962d-4d8d-a1ae-8468a29a7c4f" />
+<img width="1885" height="959" alt="image" src="https://github.com/user-attachments/assets/4f6975f9-4436-4b01-9a11-4897c83ec27a" />
+
 
 Peevee shows the **actual filesystem usage of every PersistentVolumeClaim you
 operate**, from one place.
