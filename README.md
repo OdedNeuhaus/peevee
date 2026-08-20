@@ -152,7 +152,7 @@ The chart pulls a published multi-arch image (`linux/amd64`, `linux/arm64`);
 nothing to build:
 
 ```text
-ghcr.io/odedneuhaus/peevee:0.1.0
+ghcr.io/odedneuhaus/peevee:0.1.1
 ```
 
 ---
