@@ -10,6 +10,10 @@ const state = {
   atRisk: false,
   sort: 'usage',
   desc: false,
+  // Rows per page. 0 means every matching row, which is what the table did
+  // before and is still the right answer for a small fleet.
+  pageSize: 50,
+  offset: 0,
   data: null,
   clusters: null,
   config: null,
@@ -77,10 +81,27 @@ function queryString() {
   return p.toString();
 }
 
+// The CSV export deliberately uses queryString() without these: exporting one
+// page of a filtered view is never what anyone means by "export".
+function pagedQueryString() {
+  const p = new URLSearchParams(queryString());
+  if (state.pageSize > 0) {
+    p.set('limit', String(state.pageSize));
+    if (state.offset > 0) p.set('offset', String(state.offset));
+  }
+  return p.toString();
+}
+
+// Every filter, search or sort change makes the current page meaningless —
+// page 7 of the old result set has nothing to do with page 7 of the new one.
+function reload() {
+  state.offset = 0;
+  return loadVolumes();
+}
 
 async function loadVolumes() {
   try {
-    const res = await fetch(`/api/v1/volumes?${queryString()}`);
+    const res = await fetch(`/api/v1/volumes?${pagedQueryString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.data = await res.json();
     renderVolumes();
@@ -240,6 +261,9 @@ function renderVolumes() {
   const body = $('#volBody');
   const empty = $('#volEmpty');
 
+  // Belt and braces: an empty page must render as an empty table, never throw.
+  data.volumes = data.volumes || [];
+
   if (!data.volumes.length) {
     body.innerHTML = '';
     empty.hidden = false;
@@ -254,19 +278,61 @@ function renderVolumes() {
     body.innerHTML = data.volumes.map(rowHTML).join('');
   }
 
+  renderPager(data);
+
   const errCount = Object.keys(data.errors || {}).length;
-  $('#tableFoot').innerHTML = `
-    <span>Showing ${data.volumes.length.toLocaleString()} of ${data.matched.toLocaleString()} matching volumes</span>
-    <span>
-      Collected in ${data.durationMs}ms · ${relTime(data.generatedAt)}
-      ${errCount ? ` · <span style="color:var(--crit)">${errCount} cluster${errCount > 1 ? 's' : ''} unreachable</span>` : ''}
-    </span>`;
+  $('#footMeta').innerHTML = `
+    Collected in ${data.durationMs}ms · ${relTime(data.generatedAt)}
+    ${errCount ? ` · <span style="color:var(--crit)">${errCount} cluster${errCount > 1 ? 's' : ''} unreachable</span>` : ''}`;
 
   $('#clearFilters').hidden = !hasActiveFilters();
   $$('.vol-table th.sortable').forEach((th) => {
     th.classList.toggle('sorted', th.dataset.sort === state.sort);
     th.classList.toggle('asc', th.dataset.sort === state.sort && state.desc);
   });
+}
+
+// The table used to render every matching claim, which on a real fleet is a
+// page you can scroll for a very long time without arriving anywhere.
+function renderPager(data) {
+  const size = state.pageSize;
+  const matched = data.matched;
+
+  // A background refresh can shrink the result set under us — claims come and
+  // go — leaving the offset past the end and the table blank. Step back to the
+  // last page that exists. The offset strictly decreases, so this cannot loop.
+  if (size > 0 && state.offset > 0 && state.offset >= matched) {
+    state.offset = Math.max(0, (Math.ceil(matched / size) - 1) * size);
+    loadVolumes();
+    return;
+  }
+
+  const shown = data.volumes.length;
+  const from = shown === 0 ? 0 : state.offset + 1;
+  const to = state.offset + shown;
+  $('#rowRange').textContent = size > 0 && matched > shown
+    ? `${from.toLocaleString()}–${to.toLocaleString()} of ${matched.toLocaleString()}`
+    : `${matched.toLocaleString()} volume${matched === 1 ? '' : 's'}`;
+
+  const pages = size > 0 ? Math.ceil(matched / size) : 1;
+  const page = size > 0 ? Math.floor(state.offset / size) + 1 : 1;
+  $('#pager').hidden = pages <= 1;
+  $('#pageLabel').textContent = `Page ${page.toLocaleString()} of ${pages.toLocaleString()}`;
+
+  const atFirst = page <= 1;
+  const atLast = page >= pages;
+  $('#pageFirst').disabled = atFirst;
+  $('#pagePrev').disabled = atFirst;
+  $('#pageNext').disabled = atLast;
+  $('#pageLast').disabled = atLast;
+}
+
+// Paging keeps the scroll position by default, which lands you in the middle of
+// the new page with no idea it changed.
+function goToOffset(offset) {
+  state.offset = Math.max(0, offset);
+  loadVolumes();
+  $('.table-wrap').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 function rowHTML(v) {
@@ -362,7 +428,7 @@ function wireDropdowns() {
       state.filters[param] = e.target.checked
         ? [...cur, val]
         : cur.filter((v) => v !== val);
-      loadVolumes();
+      reload();
     });
   });
 
@@ -686,12 +752,12 @@ function wire() {
   $('#search').addEventListener('input', (e) => {
     state.search = e.target.value.trim();
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(loadVolumes, 180);
+    searchTimer = setTimeout(reload, 180);
   });
 
   $('#atRisk').addEventListener('change', (e) => {
     state.atRisk = e.target.checked;
-    loadVolumes();
+    reload();
   });
 
   $('#clearFilters').addEventListener('click', () => {
@@ -700,7 +766,21 @@ function wire() {
     state.atRisk = false;
     $('#search').value = '';
     $('#atRisk').checked = false;
-    loadVolumes();
+    reload();
+  });
+
+  $('#pageSize').addEventListener('change', (e) => {
+    state.pageSize = Number(e.target.value) || 0;
+    localStorage.setItem('peevee-page-size', String(state.pageSize));
+    reload();
+  });
+
+  $('#pageFirst').addEventListener('click', () => goToOffset(0));
+  $('#pagePrev').addEventListener('click', () => goToOffset(state.offset - state.pageSize));
+  $('#pageNext').addEventListener('click', () => goToOffset(state.offset + state.pageSize));
+  $('#pageLast').addEventListener('click', () => {
+    const matched = state.data?.matched || 0;
+    goToOffset((Math.ceil(matched / state.pageSize) - 1) * state.pageSize);
   });
 
   $$('.vol-table th.sortable').forEach((th) => {
@@ -708,7 +788,7 @@ function wire() {
       const key = th.dataset.sort;
       if (state.sort === key) state.desc = !state.desc;
       else { state.sort = key; state.desc = false; }
-      loadVolumes();
+      reload();
     });
   });
 
@@ -809,6 +889,14 @@ function wire() {
 function init() {
   const saved = localStorage.getItem('peevee-theme');
   if (saved) document.documentElement.dataset.theme = saved;
+
+  // Read before the first fetch, so a saved choice does not cost an extra round
+  // trip at the default size. Only values the dropdown actually offers are
+  // accepted, or the select and the state would disagree.
+  const sizes = $$('#pageSize option').map((o) => o.value);
+  const savedSize = localStorage.getItem('peevee-page-size');
+  if (sizes.includes(savedSize)) state.pageSize = Number(savedSize);
+  $('#pageSize').value = String(state.pageSize);
 
   wire();
   loadConfig();

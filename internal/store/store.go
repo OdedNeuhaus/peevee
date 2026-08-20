@@ -195,7 +195,9 @@ func (s *Store) Query(q Query) Result {
 
 	if q.Offset > 0 {
 		if q.Offset >= len(rows) {
-			rows = nil
+			// Not nil: this marshals straight to JSON, and a null where the
+			// client expects a list is a crash rather than an empty table.
+			rows = []Row{}
 		} else {
 			rows = rows[q.Offset:]
 		}

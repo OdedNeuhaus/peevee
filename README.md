@@ -252,9 +252,13 @@ storage class, workload, node, capacity, used, available, utilisation, inode
 utilisation, growth rate and projected time-to-full.
 
 Filter by cluster, namespace, storage class or status; search across claim,
-namespace, workload and node; sort any column. Click a row for the detail
-panel — inode usage, growth rate, history chart and every field collected.
-`/` focuses search, `Esc` closes.
+namespace, workload and node; sort any column. The table shows 50 rows at a
+time, adjustable down to 25 or up to all of them, and the choice is remembered.
+Click a row for the detail panel — inode usage, growth rate, history chart and
+every field collected. `/` focuses search, `Esc` closes.
+
+Sorting, filtering and the totals always run over every matching claim, not the
+page you are looking at, and the CSV export is the whole match.
 
 Claims nobody mounts are reported as **`unmounted`**, claims still waiting for a
 volume as **`pending`**, and claims that are mounted but whose storage driver

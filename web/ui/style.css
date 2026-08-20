@@ -508,10 +508,41 @@ main { padding: 20px 24px 64px; max-width: 1680px; margin: 0 auto; }
 .empty strong { display: block; color: var(--text-muted); font-size: 15px; margin-bottom: 5px; }
 
 .table-foot {
-  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px 14px;
   padding: 10px 3px;
   font-size: 12px; color: var(--text-faint);
 }
+.foot-group { display: flex; align-items: center; gap: 10px; }
+.rows-per-page { display: inline-flex; align-items: center; gap: 6px; }
+.rows-per-page select {
+  font: inherit; font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.rows-per-page select:hover { border-color: var(--border-strong); }
+
+.pager { display: flex; align-items: center; gap: 4px; }
+.pager #pageLabel { padding: 0 6px; white-space: nowrap; }
+.page-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.page-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+/* Kept in the layout when disabled rather than hidden, so the row of controls
+   does not shift under the pointer at the first and last page. */
+.page-btn:disabled { opacity: .4; cursor: default; }
+.page-btn .icon { width: 15px; height: 15px; }
 
 /* ── Cluster cards ─────────────────────────────────────────── */
 .cluster-grid {

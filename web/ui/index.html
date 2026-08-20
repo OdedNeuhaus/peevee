@@ -125,7 +125,39 @@
       </table>
       <div class="empty" id="volEmpty" hidden></div>
     </div>
-    <div class="table-foot" id="tableFoot"></div>
+    <!-- Rendered in place rather than as innerHTML: the footer is refreshed on
+         every collection, and rebuilding it would close an open dropdown. -->
+    <div class="table-foot" id="tableFoot">
+      <div class="foot-group">
+        <label class="rows-per-page">
+          <span>Rows</span>
+          <select id="pageSize" aria-label="Rows per page">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="250">250</option>
+            <option value="0">All</option>
+          </select>
+        </label>
+        <span id="rowRange"></span>
+      </div>
+      <div class="pager" id="pager" hidden>
+        <button type="button" class="page-btn" id="pageFirst" aria-label="First page">
+          <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m17 6-6 6 6 6M7 6v12"/></svg>
+        </button>
+        <button type="button" class="page-btn" id="pagePrev" aria-label="Previous page">
+          <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>
+        </button>
+        <span id="pageLabel" aria-live="polite"></span>
+        <button type="button" class="page-btn" id="pageNext" aria-label="Next page">
+          <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="page-btn" id="pageLast" aria-label="Last page">
+          <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="m7 6 6 6-6 6M17 6v12"/></svg>
+        </button>
+      </div>
+      <span id="footMeta"></span>
+    </div>
   </section>
 
   <!-- ── Clusters ────────────────────────────────────────────── -->

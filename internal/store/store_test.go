@@ -1,6 +1,7 @@
 package store
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -138,6 +139,62 @@ func TestInodeExhaustionRaisesSeverity(t *testing.T) {
 	res := st.Query(Query{WarnThreshold: 75, CritThreshold: 90})
 	if res.Volumes[0].Severity != "critical" {
 		t.Errorf("severity = %q, want critical (96%% of inodes used)", res.Volumes[0].Severity)
+	}
+}
+
+// The table pages through a filtered view, so a page has to be a window onto
+// the sorted result — not a slice taken before sorting — and the numbers around
+// it have to describe the whole match. Tiles that changed as you paged would be
+// worse than no paging at all.
+func TestPagingWindowsTheSortedResultAndLeavesTotalsWhole(t *testing.T) {
+	st := New()
+	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{
+		vol("a", "low", 100, 1000, false, "n1"),
+		vol("a", "high", 900, 1000, false, "n2"),
+		vol("a", "mid", 500, 1000, false, "n3"),
+		vol("a", "top", 950, 1000, false, "n4"),
+	}})
+
+	all := st.Query(Query{Sort: "usage", Desc: true})
+	if got := names(all.Volumes); len(got) != 4 {
+		t.Fatalf("unpaged query returned %v", got)
+	}
+
+	page2 := st.Query(Query{Sort: "usage", Desc: true, Limit: 2, Offset: 2})
+
+	if got, want := names(page2.Volumes), names(all.Volumes)[2:4]; !reflect.DeepEqual(got, want) {
+		t.Errorf("page 2 = %v, want %v", got, want)
+	}
+	if page2.Matched != 4 {
+		t.Errorf("matched = %d, want 4 — the count is of the match, not the page", page2.Matched)
+	}
+	if page2.Totals.Volumes != 4 || page2.Totals.CapacityBytes != all.Totals.CapacityBytes {
+		t.Errorf("totals describe the page, not the fleet: %+v", page2.Totals)
+	}
+	if len(page2.Facets.Namespaces) != len(all.Facets.Namespaces) {
+		t.Errorf("facets were narrowed to the page")
+	}
+}
+
+// Paging past the end happens whenever the result set shrinks under an open
+// page. It must come back empty rather than wrapping or panicking.
+func TestOffsetPastTheEndReturnsNoRows(t *testing.T) {
+	st := New()
+	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{
+		vol("a", "only", 100, 1000, false, "n1"),
+	}})
+
+	res := st.Query(Query{Limit: 25, Offset: 200})
+
+	if len(res.Volumes) != 0 {
+		t.Errorf("volumes = %v, want none", names(res.Volumes))
+	}
+	// A nil slice marshals to null, and the UI reads volumes.length.
+	if res.Volumes == nil {
+		t.Error("volumes is nil; it must serialise as [] rather than null")
+	}
+	if res.Matched != 1 {
+		t.Errorf("matched = %d, want 1", res.Matched)
 	}
 }
 

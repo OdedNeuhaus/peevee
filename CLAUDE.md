@@ -164,9 +164,10 @@ provider. Revisit invariant 7 if admin roles arrive.
 depends on (1) or a small local store.
 
 ### 6. Scale hardening for 10k+ claims
-The table renders every row and the snapshot is copied per query. Virtualise the
-table, paginate server-side, and avoid the full-slice copy in `store.Query`.
-→ `web/ui/app.js`, `internal/store/store.go`.
+The table now renders one page at a time (`limit`/`offset`, 50 by default), so
+the DOM is bounded. What is left: `store.Query` still copies and sorts the whole
+snapshot on every request, including once per connected browser per collection.
+→ `internal/store/store.go`.
 
 ### 7. StorageClass and backend-pool capacity
 Per-claim usage misses the pool filling up underneath. Trident and PowerFlex
