@@ -87,7 +87,7 @@
   }
 }
 
-/* "girls" is an easter egg: type g-i-r-l-s anywhere outside an input. Deep
+/* "girls" is the first easter egg: type g-i-r-l-s anywhere outside an input. Deep
    purple with a neon-pink glow. The glow lives in the shadow tokens, so every
    card, button and drawer picks it up with zero new selectors. --crit stays
    red on purpose: when pink is the accent, a pink alarm no longer reads as
@@ -119,6 +119,39 @@
   --shadow-sm: 0 0 0 1px rgba(255, 106, 213, .22), 0 0 8px rgba(255, 106, 213, .12);
   --shadow-md: 0 0 0 1px rgba(255, 106, 213, .28), 0 0 14px rgba(255, 106, 213, .18);
   --shadow-lg: 0 0 0 1px rgba(255, 106, 213, .35), 0 0 40px rgba(255, 106, 213, .30);
+}
+
+/* "boys" is the second easter egg (type b-o-y-s): deep navy with a light-blue
+   glow, carried by the shadow tokens exactly like the girls theme. The trail
+   swaps confetti squares for ball glyphs; only the skin differs, the physics
+   are shared. --crit stays red for the same reason as always. */
+:root[data-theme="boys"] {
+  color-scheme: dark;
+  --bg: #061426;
+  --bg-elev: #0c1f3a;
+  --surface: #0c1f3a;
+  --surface-2: #122a4d;
+  --border: #1e4470;
+  --border-strong: #6ad5ff;
+  --text: #e9f5ff;
+  --text-muted: #9cc0dd;
+  --text-faint: #6f93b3;
+
+  --accent: #6ad5ff;
+  --accent-soft: #0f3050;
+
+  --ok: #5ef7c4;
+  --ok-soft: #0c3226;
+  --warn: #ffd166;
+  --warn-soft: #33270f;
+  --crit: #ff5252;
+  --crit-soft: #3a1420;
+  --unknown: #7fa1bd;
+  --unknown-soft: #14283e;
+
+  --shadow-sm: 0 0 0 1px rgba(106, 213, 255, .22), 0 0 8px rgba(106, 213, 255, .12);
+  --shadow-md: 0 0 0 1px rgba(106, 213, 255, .28), 0 0 14px rgba(106, 213, 255, .18);
+  --shadow-lg: 0 0 0 1px rgba(106, 213, 255, .35), 0 0 40px rgba(106, 213, 255, .30);
 }
 
 * { box-sizing: border-box; }

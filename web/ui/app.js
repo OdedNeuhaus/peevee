@@ -661,11 +661,24 @@ function toast(msg) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
 }
 
-/* ── Girls theme confetti ───────────────────────────────────── */
+/* ── Easter-egg themes and their particle trails ────────────── */
+
+// Each hidden theme is unlocked by typing its name outside an input and
+// brings its own particle skin; the physics underneath are shared. Glyph
+// particles render larger than square ones or the balls read as noise.
+const eggThemes = {
+  girls: {
+    toast: 'Theme: girls \u2728',
+    colors: ['#ff6ad5', '#ffd166', '#5ef7c4', '#c79ad4', '#ffffff'],
+  },
+  boys: {
+    toast: 'Theme: boys \u26bd',
+    glyphs: ['\u26bd', '\ud83c\udfc0', '\ud83c\udfc8'],  // soccer, basketball, football
+  },
+};
 
 const confetti = {
-  ctx: null, parts: [], raf: 0, active: false,
-  colors: ['#ff6ad5', '#ffd166', '#5ef7c4', '#c79ad4', '#ffffff'],
+  ctx: null, parts: [], raf: 0, active: false, skin: null,
 };
 // Tracked so the activation burst can land where the mouse actually is,
 // even though the trigger is a keystroke.
@@ -677,13 +690,15 @@ function confettiSpawn(x, y, n) {
   // A hard cap keeps a frantic mouse from growing the array without bound.
   const room = 120 - confetti.parts.length;
   for (let i = 0; i < Math.min(n, room); i++) {
+    const { colors, glyphs } = confetti.skin;
     confetti.parts.push({
       x, y,
       vx: (Math.random() - 0.5) * 2.4,
       vy: -Math.random() * 1.8 - 0.4,
-      size: Math.random() * 3 + 1.5,
+      size: glyphs ? Math.random() * 8 + 12 : Math.random() * 3 + 1.5,
       life: 1,
-      color: confetti.colors[(Math.random() * confetti.colors.length) | 0],
+      color: colors && colors[(Math.random() * colors.length) | 0],
+      glyph: glyphs && glyphs[(Math.random() * glyphs.length) | 0],
     });
   }
   if (!confetti.raf) {
@@ -710,8 +725,13 @@ function confettiTick(now) {
     p.life -= dt / 48;    // 48 x 16.67ms = 800ms whatever the frame rate
     if (p.life <= 0) { parts.splice(i, 1); continue; }
     ctx.globalAlpha = p.life;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x, p.y, p.size, p.size);
+    if (p.glyph) {
+      ctx.font = `${p.size}px serif`;
+      ctx.fillText(p.glyph, p.x, p.y);
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
   }
   ctx.globalAlpha = 1;
   // The loop stops itself when the last particle dies, so an idle tab
@@ -736,12 +756,14 @@ function resizeConfetti() {
 }
 window.addEventListener('resize', resizeConfetti);
 
-// Called whenever the theme changes; owns everything conditional on "girls".
+// Called whenever the theme changes; owns everything conditional on an
+// easter-egg theme being active.
 function syncConfetti() {
-  const on = document.documentElement.dataset.theme === 'girls'
-    && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const skin = eggThemes[document.documentElement.dataset.theme];
+  const on = !!skin && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   const c = $('#confetti');
   confetti.active = on;
+  confetti.skin = on ? skin : null;
   c.hidden = !on;
   if (on) {
     confetti.ctx = c.getContext('2d');
@@ -857,8 +879,9 @@ function wire() {
   $('#themeBtn').addEventListener('click', () => {
     const root = document.documentElement;
     const order = ['auto', 'light', 'dark'];
-    // indexOf is -1 for the "girls" easter egg, so the button always exits it
-    // back to "auto" rather than silently keeping a fourth state in the cycle.
+    // indexOf is -1 for the easter-egg themes (girls, boys), so the button
+    // always exits them back to "auto" rather than keeping hidden states in
+    // the cycle.
     const next = order[(order.indexOf(root.dataset.theme) + 1) % order.length];
     root.dataset.theme = next;
     localStorage.setItem('peevee-theme', next);
@@ -877,20 +900,22 @@ function wire() {
       e.preventDefault();
       $('#search').focus();
     }
-    // Easter egg: typing "girls" outside an input flips the theme. Only bare
-    // printable keys count, so shortcuts like Ctrl+R never feed the buffer,
-    // and searching for a namespace containing "girls" never triggers it.
+    // Easter eggs: typing a hidden theme's name outside an input flips to
+    // it. Only bare printable keys count, so shortcuts like Ctrl+R never
+    // feed the buffer, and searching for a namespace containing the name
+    // never triggers it.
     const tag = document.activeElement.tagName;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
         && tag !== 'INPUT' && tag !== 'TEXTAREA') {
-      keyBuffer = (keyBuffer + e.key.toLowerCase()).slice(-5);
-      if (keyBuffer === 'girls') {
+      keyBuffer = (keyBuffer + e.key.toLowerCase()).slice(-8);
+      const name = Object.keys(eggThemes).find((n) => keyBuffer.endsWith(n));
+      if (name) {
         keyBuffer = '';
-        document.documentElement.dataset.theme = 'girls';
-        localStorage.setItem('peevee-theme', 'girls');
+        document.documentElement.dataset.theme = name;
+        localStorage.setItem('peevee-theme', name);
         syncConfetti();
         confettiSpawn(mouseX, mouseY, 60);
-        toast('Theme: girls \u2728');
+        toast(eggThemes[name].toast);
       }
     }
   });
