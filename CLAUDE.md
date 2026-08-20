@@ -10,7 +10,8 @@ Kubernetes clusters. It reads kubelet's `/stats/summary` through each cluster's
 API server proxy, joins it to PVC inventory, serves a single-page UI, and remote
 writes to Grafana Mimir.
 
-Deep background: [docs/how-it-works.md](docs/how-it-works.md).
+Deep background: [docs/how-it-works.md](docs/how-it-works.md). Why a claim shows
+no usage: [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Commands
 
@@ -54,9 +55,10 @@ Breaking any of these silently produces wrong answers, which is worse than
 crashing. Each has a test.
 
 **1. Never report "no data" as zero.**
-A claim nobody mounts is not an empty claim. `unmounted`, `pending` and `block`
-carry no usage numbers, publish no usage series, and are excluded from
-aggregates. `store_test.go:TestUnmountedIsUnknownNotZero`,
+A claim nobody mounts is not an empty claim. `unmounted`, `unreported`,
+`pending` and `block` carry no usage numbers, publish no usage series, and are
+excluded from aggregates. `store_test.go:TestUnmountedIsUnknownNotZero`,
+`store_test.go:TestUnreportedIsCountedSeparatelyFromUnmounted`,
 `metrics_test.go:TestUnmountedPublishesNoUsageSeries`.
 
 **2. Count each shared filesystem once in aggregates.**
@@ -97,6 +99,12 @@ revisiting this with the user.
   points. One fresh sample per volume per minute is a hard ceiling.
 - **`hostPath` PVs report nothing.** Kubelet has no metrics provider for that
   plugin. `local-path-provisioner` creates `local` volumes, which do report.
+- **A CSI driver reports usage only if it advertises `GET_VOLUME_STATS`.**
+  Kubelet never asks otherwise, so no amount of work here produces a number.
+  PowerFlex gates it behind `node.healthMonitor.enabled` (issue #4). These land
+  as `unreported`, and `collector.annotateSilentDrivers` names the driver when
+  none of its claims report. Keep that inference data-driven — no per-driver
+  code.
 - **`[hidden]` in CSS.** Any rule setting `display` beats the browser's
   `display:none` for the attribute. There is a global
   `[hidden] { display: none !important; }` — do not remove it.
@@ -118,11 +126,6 @@ should say per-claim consumption is **unknowable** via `statfs`.
 **2. Default collector interval is below kubelet's cadence.**
 `charts/peevee/values.yaml` ships `60s`, matching kubelet — but confirm dev
 overrides do too. Anything below 60s doubles API traffic for no new data.
-
-**3. `unmounted` is overloaded.** It covers both "no pod mounts this" and "a pod
-mounts it but the node reported nothing" (the `hostPath` case). The message
-distinguishes them; the status does not. Consider a distinct `unreported`
-status — note it is an `AllStatuses` change, which affects the Mimir state set.
 
 ## Roadmap
 
@@ -173,8 +176,9 @@ feature that breaks the "no per-driver code" property — keep it strictly
 additive and optional.
 
 ### 8. Smaller, worth doing
-- **RBAC preflight**: probe `nodes/proxy` on cluster registration and surface a
-  precise error instead of every volume silently reporting `unmounted`.
+- **RBAC preflight**: probe `nodes/proxy` on cluster registration. Per-scrape
+  failures already surface per volume and in the cluster panel; a preflight
+  would catch it once at startup instead of once per claim.
 - **Saved views**: persist filter combinations in the URL, so a link to
   "critical in prod" is shareable. `web/ui/app.js` only.
 - **Grafana dashboard JSON** shipped in `examples/`.

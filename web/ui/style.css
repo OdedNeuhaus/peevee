@@ -492,9 +492,12 @@ main { padding: 20px 24px 64px; max-width: 1680px; margin: 0 auto; }
 .badge.ok { color: var(--ok); background: var(--ok-soft); }
 .badge.warning { color: var(--warn); background: var(--warn-soft); }
 .badge.critical { color: var(--crit); background: var(--crit-soft); }
-.badge.unknown, .badge.unmounted, .badge.pending, .badge.block, .badge.stale {
+.badge.unknown, .badge.unmounted, .badge.unreported, .badge.pending, .badge.block, .badge.stale {
   color: var(--unknown); background: var(--unknown-soft);
 }
+/* Until claims started carrying per-node scrape failures, no volume ever had
+   status "error", so it had no rule and rendered as unstyled text. */
+.badge.error { color: var(--crit); background: var(--crit-soft); }
 .badge.shared { color: var(--accent); background: var(--accent-soft); }
 
 .spark { display: block; width: 74px; height: 22px; overflow: visible; }

@@ -35,6 +35,7 @@ const (
 var AllStatuses = []model.Status{
 	model.StatusOK,
 	model.StatusUnmounted,
+	model.StatusUnreported,
 	model.StatusBlock,
 	model.StatusPending,
 	model.StatusStale,

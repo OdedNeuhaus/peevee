@@ -53,6 +53,8 @@ groups:
           summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is projected to fill in {{ $value | humanize }} days"
 
       # Money quietly leaking: claims nothing mounts, still provisioned.
+      # "unmounted" means exactly that and nothing else — a claim whose driver
+      # publishes no statistics is "unreported" and must not be deleted.
       - alert: PVCUnmountedForADay
         expr: |
           min_over_time(peevee_pvc_status{status="unmounted"}[24h]) == 1
@@ -62,6 +64,26 @@ groups:
         annotations:
           summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has had no pod for 24h"
           description: "On {{ $labels.cluster }}. It is still provisioned and still billed."
+
+      # A whole storage driver measuring nothing. Usually its CSI node plugin
+      # does not advertise GET_VOLUME_STATS, which is a one-line fix on the
+      # driver — see docs/troubleshooting.md. Until then those claims are
+      # invisible in every capacity number, which is worth knowing about.
+      - alert: PVCsUnreportedByDriver
+        # provisioner lives on peevee_pvc_info, not on the state set, so the
+        # driver has to be joined in before grouping by it.
+        expr: |
+          count by (cluster, provisioner) (
+            (peevee_pvc_status{status="unreported"} == 1)
+              * on (cluster, namespace, persistentvolumeclaim) group_left(provisioner)
+                peevee_pvc_info
+          ) > 5
+        for: 2h
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $value }} claims from {{ $labels.provisioner }} on {{ $labels.cluster }} report no usage statistics"
+          description: "The driver is not publishing volume stats, so this storage is unmeasured. See docs/troubleshooting.md."
 
       - alert: PeeveeClusterUnreachable
         expr: peevee_cluster_up == 0

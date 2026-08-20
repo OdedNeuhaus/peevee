@@ -55,17 +55,28 @@ an empty one.
 | Situation | Status | Why |
 |---|---|---|
 | No running pod mounts the claim | `unmounted` | Nothing has it mounted, so nobody is measuring it |
+| Mounted, node answered, no statistics for it | `unreported` | The driver never published a measurement — see below |
 | `volumeMode: Block` | `block` | No filesystem to `statfs` |
 | Claim not bound yet | `pending` | Nothing exists to measure |
 | Sample older than `staleAfter` | `stale` | Shown with its age rather than as current |
-| Cluster or node unreachable | `error` | Recorded per cluster; the rest still report |
+| Cluster or node unreachable | `error` | Recorded per cluster and per node; claims on a node we could not scrape name it and why |
 
 **`hostPath` PVs report nothing at all.** Kubelet has no metrics provider for
 that volume plugin, so a `hostPath` volume returns no statistics even while a
-pod writes to it. Peevee reports it as `unmounted` with the message *"mounted,
-but the node reported no filesystem statistics"*. Note that
+pod writes to it. Peevee reports it as `unreported`. Note that
 `local-path-provisioner` creates `local` volumes, not `hostPath`, and those do
 report.
+
+The same happens to a CSI driver whose node plugin does not advertise the
+`GET_VOLUME_STATS` capability — kubelet never asks it for statistics, so none
+exist. Dell PowerFlex is the common case, and it is a driver-side switch:
+[troubleshooting.md](troubleshooting.md#a-claim-reports-unreported).
+
+`unreported` is deliberately not `unmounted`. The claim is mounted and in use;
+what is missing is a measurement, and the reason belongs to the driver rather
+than to the claim. When no claim from one provisioner reports anything in a
+cluster, Peevee says so in the message rather than leaving each claim to look
+individually broken.
 
 ## Shared filesystems
 

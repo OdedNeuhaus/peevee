@@ -68,8 +68,8 @@ inventory.
   names so existing dashboards and mixin alerts work unchanged
 - 🪶 **Lightweight** — one Go binary, no database, 9.8 MiB image, ~10 MiB of RAM
 - 🔒 **Read-only** — Peevee never modifies a workload or a volume
-- 🙈 **Honest about gaps** — a claim nobody mounts reports `unmounted`, never a
-  misleading `0%`
+- 🙈 **Honest about gaps** — a claim nobody mounts reports `unmounted`, one
+  nothing measured reports `unreported`, never a misleading `0%`
 
 ---
 
@@ -234,7 +234,8 @@ kubelet:
 ```
 
 Without `nodes/proxy`, Peevee still discovers every claim — but cannot tell how
-full any of them are, and every volume reports `unmounted`.
+full any of them are: every volume reports `error`, naming the node and the
+denied call.
 
 > `nodes/proxy` grants broader access to kubelet APIs than an ordinary read-only
 > role. Treat Peevee's credentials accordingly, and prefer a dedicated
@@ -255,9 +256,10 @@ namespace, workload and node; sort any column. Click a row for the detail
 panel — inode usage, growth rate, history chart and every field collected.
 `/` focuses search, `Esc` closes.
 
-Claims nobody mounts are reported as **`unmounted`**, and claims still waiting
-for a volume as **`pending`**. Neither is shown as `0%`, and neither is counted
-in the fleet totals — a claim with no data is not an empty claim.
+Claims nobody mounts are reported as **`unmounted`**, claims still waiting for a
+volume as **`pending`**, and claims that are mounted but whose storage driver
+publishes no statistics as **`unreported`**. None is shown as `0%`, and none is
+counted in the fleet totals — a claim with no data is not an empty claim.
 
 ### Clusters
 
@@ -394,7 +396,7 @@ internal/
 
 web/ui/            embedded web UI (no build step)
 charts/peevee/     Helm chart
-docs/              how it works, metrics, configuration
+docs/              how it works, metrics, configuration, troubleshooting
 scripts/           kubeconfig generation, install helper
 examples/          alert rules, PromQL cookbook
 ```
@@ -408,18 +410,25 @@ mounted for volume statistics to exist at all. Rather than pretend, those cases
 are reported as:
 
 ```text
-unmounted
+unmounted     nobody mounts it
+unreported    mounted, but nothing measured it
 ```
 
-Two more worth knowing up front:
+Three more worth knowing up front:
 
+- **A CSI driver only reports usage if it advertises `GET_VOLUME_STATS`.** Some
+  ship with it off — Dell PowerFlex needs `node.healthMonitor.enabled`. Peevee
+  says so when a whole driver is silent, but the fix is on the driver.
 - **`hostPath` volumes report nothing.** The kubelet has no metrics provider for
   that plugin. (`local-path-provisioner` creates `local` volumes, which do
   report.)
 - **Shared filesystems report the whole host disk** for every claim on it, so
   Peevee counts each disk once in the totals and flags those rows as shared.
 
-Details and the rest: [docs/how-it-works.md](docs/how-it-works.md).
+Details and the rest: [docs/how-it-works.md](docs/how-it-works.md). When a claim
+reports no usage and you expected one,
+[docs/troubleshooting.md](docs/troubleshooting.md) walks through the three
+causes.
 
 ---
 

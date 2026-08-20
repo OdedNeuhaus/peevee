@@ -47,7 +47,8 @@ them unchanged. Peevee adds a `cluster` label to make them fleet-wide.
 ## Two deliberate design choices
 
 **A claim with no statistics publishes no usage series at all.** No zeros are
-emitted for `unmounted`, `pending` or `block` claims — a zero would be read as
+emitted for `unmounted`, `unreported`, `pending` or `block` claims — a zero
+would be read as
 an empty volume, which is a different and false statement. `peevee_pvc_requested_bytes`
 is still published, because the requested size is known regardless and is what
 capacity planning runs on.

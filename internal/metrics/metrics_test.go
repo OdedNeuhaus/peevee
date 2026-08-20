@@ -104,6 +104,30 @@ func TestUnmountedPublishesNoUsageSeries(t *testing.T) {
 	}
 }
 
+// Unreported carries no measurement either, so it must publish no usage series
+// for the same reason unmounted does not: a zero would be read as an empty disk.
+func TestUnreportedPublishesNoUsageSeries(t *testing.T) {
+	row := store.Row{Volume: model.Volume{
+		Cluster: "c1", Namespace: "ns", Name: "powerflex",
+		Status: model.StatusUnreported, RequestedBytes: 1024,
+	}}
+	samples := Build(result(row), nil, time.Now())
+
+	for _, name := range []string{
+		"kubelet_volume_stats_used_bytes",
+		"kubelet_volume_stats_capacity_bytes",
+		"peevee_pvc_usage_ratio",
+	} {
+		if got := find(samples, name, nil); len(got) != 0 {
+			t.Errorf("%s was published for a claim with no statistics", name)
+		}
+	}
+	active := find(samples, "peevee_pvc_status", map[string]string{"status": "unreported"})
+	if len(active) != 1 || active[0].Value != 1 {
+		t.Errorf("unreported should be the active state, got %v", active)
+	}
+}
+
 func TestKubeletCompatibleNamesAndValues(t *testing.T) {
 	row := store.Row{Volume: model.Volume{
 		Cluster: "prod", Namespace: "db", Name: "pgdata", Node: "node-7",

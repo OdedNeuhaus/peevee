@@ -100,6 +100,32 @@ func TestUnmountedIsUnknownNotZero(t *testing.T) {
 	}
 }
 
+// An unreported claim is in use but unmeasured. It must not land in the
+// unmounted tile — that tile is what people go and delete — and it must stay
+// out of the fleet aggregates, exactly like every other claim with no data.
+func TestUnreportedIsCountedSeparatelyFromUnmounted(t *testing.T) {
+	st := New()
+	st.Put(model.Snapshot{GeneratedAt: time.Now(), Volumes: []model.Volume{
+		{Cluster: "c1", Namespace: "a", Name: "orphan", Status: model.StatusUnmounted, RequestedBytes: 5000},
+		{Cluster: "c1", Namespace: "a", Name: "powerflex", Status: model.StatusUnreported, RequestedBytes: 8000},
+	}})
+	res := st.Query(Query{WarnThreshold: 75, CritThreshold: 90})
+
+	if res.Totals.Unmounted != 1 {
+		t.Errorf("unmounted = %d, want 1", res.Totals.Unmounted)
+	}
+	if res.Totals.Unreported != 1 {
+		t.Errorf("unreported = %d, want 1", res.Totals.Unreported)
+	}
+	if res.Totals.WithStats != 0 {
+		t.Errorf("withStats = %d, want 0", res.Totals.WithStats)
+	}
+	if res.Totals.UsedBytes != 0 || res.Totals.CapacityBytes != 0 {
+		t.Errorf("a claim with no data contributed to the aggregates: used=%d capacity=%d",
+			res.Totals.UsedBytes, res.Totals.CapacityBytes)
+	}
+}
+
 // Inode exhaustion fails writes just like a full disk, so it must raise
 // severity on its own even when there is plenty of space.
 func TestInodeExhaustionRaisesSeverity(t *testing.T) {

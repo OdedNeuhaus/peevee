@@ -87,6 +87,8 @@ config:
 
     # Keep claims that no pod mounts. They report status "unmounted" rather than
     # a misleading 0%, and they are usually the ones quietly costing money.
+    # Claims that are mounted but whose driver publishes no statistics report
+    # "unreported" and are kept either way — they have a live workload on them.
     includeUnmounted: true
     staleAfter: 10m
 

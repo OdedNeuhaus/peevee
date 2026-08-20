@@ -36,7 +36,7 @@ label. Keep it stable — renaming a file starts a new series in Mimir.
 | `nodeConcurrency` | `8` | Kubelets queried at once within a cluster |
 | `includeNamespaces` | `[]` | Allow-list; mutually exclusive with the exclude list. Trailing `*` matches by prefix |
 | `excludeNamespaces` | `[]` | Deny-list |
-| `includeUnmounted` | `true` | Keep claims no pod mounts; they report `unmounted`, not a misleading 0% |
+| `includeUnmounted` | `true` | Keep claims no pod mounts; they report `unmounted`, not a misleading 0%. Claims that are mounted but unmeasured (`unreported`) are always kept |
 | `staleAfter` | `10m` | Older kubelet samples are marked `stale` |
 
 ### `remoteWrite`

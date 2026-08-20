@@ -32,6 +32,8 @@ sum by (storageclass) (
 ```
 
 ### Claims nobody is mounting, and what they cost
+Only `unmounted` is genuine waste. A claim whose driver publishes no statistics
+is `unreported`, has a live workload on it, and must not be swept up here.
 `and on (...)` filters one series by another without pulling in its labels,
 which is what you want here: `group_left` expects label names, not an expression.
 ```promql
@@ -46,6 +48,29 @@ sum(
   peevee_pvc_requested_bytes
     and on (cluster, namespace, persistentvolumeclaim)
       (peevee_pvc_status{status="unmounted"} == 1)
+) / 1024^3
+```
+
+### Storage that is invisible because its driver reports nothing
+Every one of these is in use and consuming capacity that no usage query can see,
+which quietly understates the fleet. Usually the driver's CSI node plugin does
+not advertise `GET_VOLUME_STATS`.
+```promql
+count by (cluster, provisioner) (
+  (peevee_pvc_status{status="unreported"} == 1)
+    * on (cluster, namespace, persistentvolumeclaim) group_left(provisioner)
+      peevee_pvc_info
+)
+```
+
+### Requested capacity that no usage number covers, in GiB
+How much of the fleet's provisioned storage is unmeasured — the honest
+denominator for any "how full are we" conversation.
+```promql
+sum(
+  peevee_pvc_requested_bytes
+    and on (cluster, namespace, persistentvolumeclaim)
+      (peevee_pvc_status{status="unreported"} == 1)
 ) / 1024^3
 ```
 

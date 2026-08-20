@@ -54,6 +54,10 @@ type Health struct {
 	LastCheck    time.Time         `json:"lastCheck"`
 	NodesTotal   int               `json:"nodesTotal"`
 	NodesScraped int               `json:"nodesScraped"`
+	// NodeErrors maps node name to why its kubelet could not be scraped, so a
+	// denied nodes/proxy call is visible instead of showing up as claims that
+	// look unmounted.
+	NodeErrors   map[string]string `json:"nodeErrors,omitempty"`
 	PVCsTotal    int               `json:"pvcsTotal"`
 	ScrapeMillis int64             `json:"scrapeMillis"`
 }

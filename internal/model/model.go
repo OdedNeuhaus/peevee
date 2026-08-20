@@ -15,6 +15,12 @@ const (
 	// StatusUnmounted means the PVC is bound but no running pod mounts it, so
 	// no kubelet reports on it. Usage is unknown, not zero.
 	StatusUnmounted Status = "unmounted"
+	// StatusUnreported means a pod does mount the claim and its node answered,
+	// but kubelet had no statistics for this volume. That is a property of the
+	// storage driver, not of the claim: a CSI driver whose node plugin does not
+	// advertise GET_VOLUME_STATS is never asked for them. Calling this
+	// "unmounted" sent people looking for an orphan that does not exist.
+	StatusUnreported Status = "unreported"
 	// StatusBlock means the PVC is a raw block device. There is no filesystem
 	// for kubelet to measure; only the provisioned size is known.
 	StatusBlock Status = "block"
@@ -102,6 +108,7 @@ type Totals struct {
 	Volumes        int     `json:"volumes"`
 	WithStats      int     `json:"withStats"`
 	Unmounted      int     `json:"unmounted"`
+	Unreported     int     `json:"unreported"`
 	Warning        int     `json:"warning"`
 	Critical       int     `json:"critical"`
 	CapacityBytes  int64   `json:"capacityBytes"`

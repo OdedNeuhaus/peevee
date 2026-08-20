@@ -5,6 +5,7 @@ package collector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/OdedNeuhaus/peevee/internal/cluster"
@@ -153,8 +155,9 @@ func (c *Collector) collectCluster(ctx context.Context, cl *cluster.Cluster, hea
 			wanted[m.node] = true
 		}
 	}
-	stats, scraped := c.scrapeNodes(ctx, cl, nodes.Items, wanted)
-	health.NodesScraped = scraped
+	scrape := c.scrapeNodes(ctx, cl, nodes.Items, wanted)
+	health.NodesScraped = scrape.scraped
+	health.NodeErrors = scrape.failed
 
 	staleAfter := c.cfg.Collector.StaleAfter.D()
 	out := make([]model.Volume, 0, len(pvcList.Items))
@@ -163,14 +166,60 @@ func (c *Collector) collectCluster(ctx context.Context, cl *cluster.Cluster, hea
 		if !c.namespaceAllowed(pvc.Namespace) {
 			continue
 		}
-		v := c.buildVolume(cl, pvc, provisioners, mounts, stats, staleAfter)
+		v := c.buildVolume(cl, pvc, provisioners, mounts, scrape, staleAfter)
+		// includeUnmounted is about claims nobody uses. An unreported claim has
+		// a live workload on it, so dropping it would hide a real volume behind
+		// a setting that reads as "hide the idle ones".
 		if !v.HasStats && !c.cfg.Collector.IncludeUnmounted && v.Status == model.StatusUnmounted {
 			continue
 		}
 		out = append(out, v)
 	}
+	annotateSilentDrivers(out)
 	health.PVCsTotal = len(out)
 	return out, nil
+}
+
+// annotateSilentDrivers looks for provisioners that reported nothing at all in
+// this cluster. One claim with no statistics says little; every claim from one
+// driver having none, while other drivers in the same cluster report normally,
+// is the driver not advertising GET_VOLUME_STATS. Deriving it from the data
+// keeps peevee free of per-driver knowledge and catches hostPath and Trident
+// the same way it catches PowerFlex.
+func annotateSilentDrivers(vols []model.Volume) {
+	type tally struct{ reporting, silent int }
+	byProvisioner := map[string]*tally{}
+
+	for _, v := range vols {
+		if v.Provisioner == "" {
+			continue
+		}
+		t := byProvisioner[v.Provisioner]
+		if t == nil {
+			t = &tally{}
+			byProvisioner[v.Provisioner] = t
+		}
+		switch {
+		case v.HasStats:
+			t.reporting++
+		case v.Status == model.StatusUnreported:
+			t.silent++
+		}
+	}
+
+	for i := range vols {
+		v := &vols[i]
+		if v.Status != model.StatusUnreported {
+			continue
+		}
+		t := byProvisioner[v.Provisioner]
+		if t == nil || t.reporting > 0 {
+			continue
+		}
+		v.Message = fmt.Sprintf(
+			"no claim provisioned by %s reports statistics in this cluster (%d of %d); the driver most likely does not advertise the CSI GET_VOLUME_STATS capability",
+			v.Provisioner, t.reporting, t.reporting+t.silent)
+	}
 }
 
 // buildVolume joins one PVC with its mount and kubelet statistics.
@@ -179,7 +228,7 @@ func (c *Collector) buildVolume(
 	pvc *corev1.PersistentVolumeClaim,
 	provisioners map[string]string,
 	mounts map[string]mountInfo,
-	stats map[string]volumeSample,
+	scrape scrapeResult,
 	staleAfter time.Duration,
 ) model.Volume {
 	v := model.Volume{
@@ -222,7 +271,7 @@ func (c *Collector) buildVolume(
 		v.Workload = m.workload
 	}
 
-	sample, hasSample := stats[key]
+	sample, hasSample := scrape.samples[key]
 
 	switch {
 	case pvc.Status.Phase != corev1.ClaimBound:
@@ -238,14 +287,24 @@ func (c *Collector) buildVolume(
 		return v
 
 	case !hasSample:
-		v.Status = model.StatusUnmounted
-		if len(v.Pods) == 0 {
-			v.Message = "no running pod mounts this claim, so no kubelet reports its usage"
-		} else {
-			// Mounted but unreported: the node was unreachable, or kubelet has
-			// not produced a volume sample for it yet.
-			v.Message = "mounted, but the node reported no filesystem statistics"
+		// A claim whose node we never managed to ask is not an orphan. Calling
+		// it "unmounted" hides a denied nodes/proxy call behind a status that
+		// reads as a storage problem, so name the node and the reason.
+		if reason, failed := scrape.failed[v.Node]; v.Node != "" && failed {
+			v.Status = model.StatusError
+			v.Message = fmt.Sprintf("node %s could not be scraped: %s", v.Node, reason)
+			return v
 		}
+		if len(v.Pods) == 0 {
+			v.Status = model.StatusUnmounted
+			v.Message = "no running pod mounts this claim, so no kubelet reports its usage"
+			return v
+		}
+		// Mounted, node scraped fine, still no sample. The claim is in use and
+		// nothing about it is wrong, so it is not "unmounted"; the driver never
+		// published a measurement. annotateSilentDrivers may sharpen this.
+		v.Status = model.StatusUnreported
+		v.Message = "mounted and its node was scraped, but kubelet reported no statistics for it; the storage driver may not publish volume stats"
 		return v
 	}
 
@@ -303,15 +362,26 @@ type volumeSample struct {
 	node       string
 }
 
+// scrapeResult is one round of kubelet queries: the samples that came back, and
+// the nodes that could not be asked. Which nodes failed is not a diagnostic
+// detail — it is the reason a claim on one of them has no sample, and reporting
+// that claim as "unmounted" sends people hunting for an orphan that is really a
+// denied nodes/proxy call or a node that is down.
+type scrapeResult struct {
+	samples map[string]volumeSample
+	// failed maps node name to why it could not be scraped.
+	failed  map[string]string
+	scraped int
+}
+
 // scrapeNodes queries every relevant kubelet concurrently through the API server
 // proxy, which means peevee needs no network path to the nodes themselves.
-func (c *Collector) scrapeNodes(ctx context.Context, cl *cluster.Cluster, nodes []corev1.Node, wanted map[string]bool) (map[string]volumeSample, int) {
+func (c *Collector) scrapeNodes(ctx context.Context, cl *cluster.Cluster, nodes []corev1.Node, wanted map[string]bool) scrapeResult {
 	var (
-		mu      sync.Mutex
-		out     = map[string]volumeSample{}
-		scraped int
-		wg      sync.WaitGroup
-		sem     = make(chan struct{}, c.cfg.Collector.NodeConcurrency)
+		mu  sync.Mutex
+		res = scrapeResult{samples: map[string]volumeSample{}, failed: map[string]string{}}
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, c.cfg.Collector.NodeConcurrency)
 	)
 
 	for i := range nodes {
@@ -322,6 +392,9 @@ func (c *Collector) scrapeNodes(ctx context.Context, cl *cluster.Cluster, nodes 
 			continue
 		}
 		if !nodeReady(&node) {
+			// A NotReady kubelet answers nothing, so record it as the reason
+			// rather than letting its claims look unmounted.
+			res.failed[node.Name] = "node is not Ready"
 			continue
 		}
 
@@ -339,24 +412,50 @@ func (c *Collector) scrapeNodes(ctx context.Context, cl *cluster.Cluster, nodes 
 			if err != nil {
 				c.log.Warn("kubelet stats unavailable",
 					"cluster", cl.Name, "node", nodeName, "error", err)
+				mu.Lock()
+				defer mu.Unlock()
+				res.failed[nodeName] = scrapeError(err)
 				return
 			}
 
 			mu.Lock()
 			defer mu.Unlock()
-			scraped++
+			res.scraped++
 			for key, s := range samples {
 				// A ReadWriteMany volume is reported by every node that mounts
 				// it. Keep the highest usage so we never under-report.
-				if prev, ok := out[key]; ok && prev.used >= s.used {
+				if prev, ok := res.samples[key]; ok && prev.used >= s.used {
 					continue
 				}
-				out[key] = s
+				res.samples[key] = s
 			}
 		}(node.Name)
 	}
 	wg.Wait()
-	return out, scraped
+	return res
+}
+
+// scrapeError turns a kubelet proxy failure into something a person reading one
+// table cell can act on. A denied nodes/proxy call is by far the most common
+// cause and looks nothing like a driver problem, so it is called out by name.
+func scrapeError(err error) string {
+	msg := err.Error()
+	switch {
+	case apierrors.IsForbidden(err):
+		return "not authorised to read nodes/proxy on this cluster"
+	case apierrors.IsUnauthorized(err):
+		return "credentials rejected by the API server"
+	case apierrors.IsNotFound(err):
+		return "the API server has no proxy route to this kubelet"
+	case apierrors.IsTimeout(err) || errors.Is(err, context.DeadlineExceeded):
+		return "timed out reading kubelet stats"
+	}
+	// Long client-go errors wrap to several lines in a drawer; the first line
+	// carries the cause.
+	if i := strings.IndexByte(msg, '\n'); i > 0 {
+		msg = msg[:i]
+	}
+	return msg
 }
 
 func (c *Collector) nodeVolumeStats(ctx context.Context, cl *cluster.Cluster, node string) (map[string]volumeSample, error) {

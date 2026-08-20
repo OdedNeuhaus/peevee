@@ -348,8 +348,11 @@ func computeTotals(rows []Row) model.Totals {
 			t.Warning++
 		}
 		if !r.HasStats {
-			if r.Status == model.StatusUnmounted {
+			switch r.Status {
+			case model.StatusUnmounted:
 				t.Unmounted++
+			case model.StatusUnreported:
+				t.Unreported++
 			}
 			continue
 		}

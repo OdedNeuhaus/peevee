@@ -77,6 +77,7 @@ function queryString() {
   return p.toString();
 }
 
+
 async function loadVolumes() {
   try {
     const res = await fetch(`/api/v1/volumes?${queryString()}`);
@@ -188,6 +189,10 @@ function renderTiles(t) {
       sub: `at or above ${state.thresholds.warning}%` },
     { label: 'Unmounted', value: t.unmounted.toLocaleString(),
       sub: 'no pod, so usage is unknown' },
+    // Unreported claims are in use; they sit beside unmounted rather than in
+    // it, because the unmounted tile is the one people act on by deleting.
+    { label: 'Unreported', value: (t.unreported || 0).toLocaleString(),
+      sub: 'mounted, but the driver reports nothing' },
   ];
 
   $('#tiles').innerHTML = tiles.map((tile) => `
@@ -366,6 +371,17 @@ function wireDropdowns() {
 
 /* ── Cluster cards ──────────────────────────────────────────── */
 
+// Nodes whose kubelet could not be scraped are the reason claims on them report
+// an error instead of a usage number, so name them here rather than leaving
+// "3 of 5 reporting" as the only clue.
+function nodeErrors(errors) {
+  const rows = Object.entries(errors || {});
+  if (!rows.length) return '';
+  return `<div class="cluster-error">${rows
+    .map(([node, err]) => `${esc(node)}: ${esc(err)}`)
+    .join('<br>')}</div>`;
+}
+
 function renderClusters() {
   const data = state.clusters;
   if (!data) return;
@@ -392,6 +408,7 @@ function renderClusters() {
           <dt>Scrape</dt><dd>${c.scrapeMillis}ms · ${esc(relTime(c.lastCheck))}</dd>
         </dl>
         ${c.error ? `<div class="cluster-error">${esc(c.error)}</div>` : ''}
+        ${nodeErrors(c.nodeErrors)}
       </div>`).join('');
   }
 
@@ -507,8 +524,9 @@ function renderAtRiskTip() {
     A volume counts as at risk on <em>either</em> disk usage or inode usage, whichever
     is worse &mdash; running out of inodes fails writes exactly like a full disk.
     <br><br>
-    Volumes with no usage data (<code>unmounted</code>, <code>pending</code>, <code>block</code>)
-    are never shown here, because there is nothing to judge them on.`;
+    Volumes with no usage data (<code>unmounted</code>, <code>unreported</code>,
+    <code>pending</code>, <code>block</code>) are never shown here, because there is
+    nothing to judge them on.`;
 }
 
 /* ── Detail drawer ──────────────────────────────────────────── */
