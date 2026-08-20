@@ -680,6 +680,26 @@ const eggThemes = {
 const confetti = {
   ctx: null, parts: [], raf: 0, active: false, skin: null,
 };
+
+// Colour-emoji rasterization is expensive enough to drop frames when done
+// 120 times per frame, and mutating ctx.font per particle forces a font
+// re-resolve on top of it. Each glyph is rendered once into a small offscreen
+// canvas here; the per-frame cost is then a plain scaled drawImage.
+const glyphSprites = {};
+function glyphSprite(glyph) {
+  let sp = glyphSprites[glyph];
+  if (!sp) {
+    sp = document.createElement('canvas');
+    sp.width = sp.height = 48;
+    const sc = sp.getContext('2d');
+    sc.font = '40px serif';
+    sc.textAlign = 'center';
+    sc.textBaseline = 'middle';
+    sc.fillText(glyph, 24, 26);
+    glyphSprites[glyph] = sp;
+  }
+  return sp;
+}
 // Tracked so the activation burst can land where the mouse actually is,
 // even though the trigger is a keystroke.
 let mouseX = innerWidth / 2, mouseY = innerHeight / 2;
@@ -691,6 +711,7 @@ function confettiSpawn(x, y, n) {
   const room = 120 - confetti.parts.length;
   for (let i = 0; i < Math.min(n, room); i++) {
     const { colors, glyphs } = confetti.skin;
+    const glyph = glyphs && glyphs[(Math.random() * glyphs.length) | 0];
     confetti.parts.push({
       x, y,
       vx: (Math.random() - 0.5) * 2.4,
@@ -698,7 +719,8 @@ function confettiSpawn(x, y, n) {
       size: glyphs ? Math.random() * 8 + 12 : Math.random() * 3 + 1.5,
       life: 1,
       color: colors && colors[(Math.random() * colors.length) | 0],
-      glyph: glyphs && glyphs[(Math.random() * glyphs.length) | 0],
+      glyph,
+      sprite: glyph && glyphSprite(glyph),
     });
   }
   if (!confetti.raf) {
@@ -725,9 +747,8 @@ function confettiTick(now) {
     p.life -= dt / 48;    // 48 x 16.67ms = 800ms whatever the frame rate
     if (p.life <= 0) { parts.splice(i, 1); continue; }
     ctx.globalAlpha = p.life;
-    if (p.glyph) {
-      ctx.font = `${p.size}px serif`;
-      ctx.fillText(p.glyph, p.x, p.y);
+    if (p.sprite) {
+      ctx.drawImage(p.sprite, p.x, p.y, p.size, p.size);
     } else {
       ctx.fillStyle = p.color;
       ctx.fillRect(p.x, p.y, p.size, p.size);
